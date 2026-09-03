@@ -1,13 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { dummyProducts } from '../../utils/dummyData';
 import { useCartStore } from '../../store/cartStore';
 import { cn } from '../../lib/utils';
-import { ChevronLeft, ChevronRight, SlidersHorizontal, X } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, SlidersHorizontal, Loader2 } from 'lucide-react';
+import productApi from '../../api/productApi';
 
 const PAGE_SIZE = 8;
-
-const ALL_CATEGORIES = ['Tất cả', ...Array.from(new Set(dummyProducts.map(p => p.category)))];
 
 const tagColors = {
   'Bán chạy': 'bg-foreground text-background',
@@ -27,12 +26,14 @@ const itemVariants = {
 };
 
 const ProductCard = ({ product }) => {
+  const navigate = useNavigate();
   const { addItem } = useCartStore();
   const [hovered, setHovered] = useState(false);
   const [added, setAdded] = useState(false);
 
   const handleAdd = (e) => {
     e.preventDefault();
+    e.stopPropagation();
     addItem(product);
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
@@ -44,6 +45,7 @@ const ProductCard = ({ product }) => {
       className="group flex flex-col cursor-pointer"
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      onClick={() => navigate(`/store/products/${product.id}`)}
     >
       {/* Image 3:4 */}
       <div className="relative w-full aspect-[3/4] bg-muted overflow-hidden mb-3">
@@ -96,23 +98,10 @@ const ProductCard = ({ product }) => {
 
       {/* Info */}
       <div className="flex flex-col gap-1 px-0.5">
-        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{product.category}</p>
-        <h3 className="font-semibold text-sm leading-snug line-clamp-2">{product.name}</h3>
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{product.category_name || 'Thời trang'}</p>
+        <h3 className="font-semibold text-sm leading-snug line-clamp-2">{product.product_name}</h3>
         <div className="flex items-baseline gap-2 mt-0.5">
-          <span className="font-bold text-sm">{product.price.toLocaleString('vi-VN')}đ</span>
-          {product.originalPrice && (
-            <span className="text-xs text-muted-foreground line-through">
-              {product.originalPrice.toLocaleString('vi-VN')}đ
-            </span>
-          )}
-        </div>
-        <div className="flex gap-1.5 mt-1 flex-wrap">
-          {product.colors.slice(0, 5).map(c => (
-            <span key={c} title={c} className="w-3 h-3 rounded-full border border-border bg-muted" />
-          ))}
-          {product.colors.length > 5 && (
-            <span className="text-[10px] text-muted-foreground self-center">+{product.colors.length - 5}</span>
-          )}
+          <span className="font-bold text-sm">{Number(product.base_price).toLocaleString('vi-VN')}đ</span>
         </div>
       </div>
     </motion.div>
@@ -120,12 +109,32 @@ const ProductCard = ({ product }) => {
 };
 
 const FeaturedGrid = ({ limit }) => {
+  const [products, setProducts] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [category, setCategory] = useState('Tất cả');
   const [showFilter, setShowFilter] = useState(false);
 
-  const filtered = dummyProducts.filter(p =>
-    category === 'Tất cả' || p.category === category
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setIsLoading(true);
+      try {
+        const res = await productApi.getAllPublic();
+        if (res && res.success) {
+          setProducts(res.data);
+        }
+      } catch (error) {
+        console.error('Lỗi lấy danh sách sản phẩm:', error);
+      }
+      setIsLoading(false);
+    };
+    fetchProducts();
+  }, []);
+
+  const ALL_CATEGORIES = ['Tất cả', ...Array.from(new Set(products.map(p => p.category_name).filter(Boolean)))];
+
+  const filtered = products.filter(p =>
+    category === 'Tất cả' || p.category_name === category
   );
 
   const source = limit ? filtered.slice(0, limit) : filtered;
@@ -186,21 +195,36 @@ const FeaturedGrid = ({ limit }) => {
           ))}
         </div>
 
-        {/* Grid */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={`${page}-${category}`}
-            variants={containerVariants}
-            initial="hidden"
-            animate="show"
-            exit={{ opacity: 0, transition: { duration: 0.2 } }}
-            className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-10 sm:gap-x-6"
-          >
-            {paginated.map(product => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </motion.div>
-        </AnimatePresence>
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            <p className="text-muted-foreground mt-4 text-sm font-medium">Đang tải sản phẩm...</p>
+          </div>
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${page}-${category}`}
+              variants={containerVariants}
+              initial="hidden"
+              animate="show"
+              exit={{ opacity: 0, transition: { duration: 0.2 } }}
+              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-4 gap-y-10 sm:gap-x-6"
+            >
+              {paginated.map(product => (
+                <ProductCard 
+                  key={product.product_id} 
+                  product={{
+                    id: product.product_id,
+                    name: product.product_name,
+                    category: product.category_name,
+                    price: product.base_price,
+                    image: product.primary_image || 'https://via.placeholder.com/400x500?text=No+Image'
+                  }} 
+                />
+              ))}
+            </motion.div>
+          </AnimatePresence>
+        )}
 
         {paginated.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">

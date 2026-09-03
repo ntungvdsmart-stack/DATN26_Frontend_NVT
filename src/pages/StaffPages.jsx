@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { dummyOrders, dummyCustomers } from '../utils/dummyData';
-import { Search, Eye, Phone, Mail, Star } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { dummyCustomers } from '../utils/dummyData';
+import { Search, Eye, Phone, Mail, Star, Loader2, Edit2, CheckCircle2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import orderApi from '../api/orderApi';
 
 /* ─────────────────────────────────────────── */
 /*  Shared Pagination                         */
@@ -43,11 +44,23 @@ const Pagination = ({ page, totalPages, onChange }) => (
 /*  Status Badge Colors                        */
 /* ─────────────────────────────────────────── */
 const statusColors = {
-  'Đã giao':       'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
-  'Đang giao':     'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',
-  'Đang xử lý':   'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
-  'Chờ xác nhận': 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400',
-  'Đã huỷ':       'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
+  'completed':    'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
+  'shipping':     'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',
+  'processing':   'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
+  'confirmed':    'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400',
+  'pending':      'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400',
+  'cancelled':    'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
+  'returned':     'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
+};
+
+const statusLabels = {
+  'completed':    'Đã giao',
+  'shipping':     'Đang giao',
+  'processing':   'Đang xử lý',
+  'confirmed':    'Đã xác nhận',
+  'pending':      'Chờ xác nhận',
+  'cancelled':    'Đã huỷ',
+  'returned':     'Trả hàng'
 };
 
 const rankColors = {
@@ -65,14 +78,73 @@ const PAGE_SIZE_CUSTOMERS = 6;
 /*  Order Management                          */
 /* ─────────────────────────────────────────── */
 export const OrderManagement = () => {
+  const [orders, setOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('Tất cả');
   const [page, setPage] = useState(1);
-  const statuses = ['Tất cả', 'Chờ xác nhận', 'Đang xử lý', 'Đang giao', 'Đã giao', 'Đã huỷ'];
+  const statuses = ['Tất cả', 'pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled'];
 
-  const filtered = dummyOrders.filter(o => {
-    const matchSearch = o.id.toLowerCase().includes(search.toLowerCase()) || o.customer.toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === 'Tất cả' || o.status === filter;
+  const fetchOrders = async () => {
+    setIsLoading(true);
+    try {
+      const res = await orderApi.getAllAdmin();
+      if (res && res.success) {
+        setOrders(res.data);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const handleUpdateStatus = async (id, currentStatus) => {
+    const nextStatusMap = {
+      'pending': 'confirmed',
+      'confirmed': 'processing',
+      'processing': 'shipping',
+      'shipping': 'completed'
+    };
+    const nextStatus = nextStatusMap[currentStatus];
+    if (!nextStatus) return;
+
+    if (window.confirm(`Chuyển trạng thái đơn sang "${statusLabels[nextStatus]}"?`)) {
+      try {
+        const res = await orderApi.updateStatus(id, { status: nextStatus });
+        if (res.success) {
+          fetchOrders();
+        } else {
+          alert(res.message || 'Lỗi');
+        }
+      } catch (err) {
+        alert(err.message || 'Lỗi kết nối');
+      }
+    }
+  };
+
+  const handleCancelOrder = async (id) => {
+    if (window.confirm(`Bạn có chắc chắn muốn hủy đơn hàng này?`)) {
+      try {
+        const res = await orderApi.updateStatus(id, { status: 'cancelled' });
+        if (res.success) {
+          fetchOrders();
+        } else {
+          alert(res.message || 'Lỗi');
+        }
+      } catch (err) {
+        alert(err.message || 'Lỗi kết nối');
+      }
+    }
+  };
+
+  const filtered = orders.filter(o => {
+    const matchSearch = o.order_code.toLowerCase().includes(search.toLowerCase()) || 
+                        (o.customer_name || '').toLowerCase().includes(search.toLowerCase());
+    const matchFilter = filter === 'Tất cả' || o.order_status === filter;
     return matchSearch && matchFilter;
   });
 
@@ -80,17 +152,17 @@ export const OrderManagement = () => {
   const paginated = filtered.slice((page - 1) * PAGE_SIZE_ORDERS, page * PAGE_SIZE_ORDERS);
 
   const statCounts = {
-    'Chờ xác nhận': dummyOrders.filter(o => o.status === 'Chờ xác nhận').length,
-    'Đang xử lý':   dummyOrders.filter(o => o.status === 'Đang xử lý').length,
-    'Đang giao':    dummyOrders.filter(o => o.status === 'Đang giao').length,
-    'Đã giao':      dummyOrders.filter(o => o.status === 'Đã giao').length,
+    'Chờ xác nhận': orders.filter(o => o.order_status === 'pending').length,
+    'Đang xử lý':   orders.filter(o => o.order_status === 'processing').length,
+    'Đang giao':    orders.filter(o => o.order_status === 'shipping').length,
+    'Đã giao':      orders.filter(o => o.order_status === 'completed').length,
   };
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Quản lý Đơn hàng</h1>
-        <p className="text-muted-foreground text-sm mt-1">{dummyOrders.length} đơn hàng tổng cộng</p>
+        <p className="text-muted-foreground text-sm mt-1">{orders.length} đơn hàng tổng cộng</p>
       </div>
 
       {/* Stats */}
@@ -124,7 +196,7 @@ export const OrderManagement = () => {
               onClick={() => { setFilter(s); setPage(1); }}
               className={cn('px-3 py-2 rounded-lg text-xs font-semibold border transition-all', filter === s ? 'bg-foreground text-background border-foreground' : 'border-border hover:border-foreground/50')}
             >
-              {s}
+              {s === 'Tất cả' ? s : statusLabels[s]}
             </button>
           ))}
         </div>
@@ -136,47 +208,77 @@ export const OrderManagement = () => {
           <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-muted/50 border-b border-border">
               <tr>
-                {['Mã đơn', 'Khách hàng', 'Địa chỉ', 'Ngày đặt', 'Số SP', 'Tổng tiền', 'Trạng thái', ''].map(h => (
+                {['Mã đơn', 'Khách hàng', 'Địa chỉ', 'Ngày đặt', 'Kênh', 'Tổng tiền', 'Trạng thái', 'Thao tác'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-bold text-muted-foreground uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              <AnimatePresence>
-                {paginated.map((order, i) => (
-                  <motion.tr
-                    key={order.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ delay: i * 0.04 }}
-                    className="hover:bg-muted/30 transition-colors group"
-                  >
-                    <td className="px-4 py-3 font-mono text-xs font-bold">{order.id}</td>
-                    <td className="px-4 py-3 font-medium whitespace-nowrap">{order.customer}</td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px] truncate">{order.address}</td>
-                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{order.date}</td>
-                    <td className="px-4 py-3 text-center">{order.items}</td>
-                    <td className="px-4 py-3 font-semibold whitespace-nowrap">{order.total.toLocaleString('vi-VN')}đ</td>
-                    <td className="px-4 py-3">
-                      <span className={cn('px-2 py-1 rounded-full text-xs font-semibold whitespace-nowrap', statusColors[order.status])}>
-                        {order.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <button className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground">
-                        <Eye size={15} />
-                      </button>
-                    </td>
-                  </motion.tr>
-                ))}
-              </AnimatePresence>
+              {isLoading ? (
+                <tr>
+                  <td colSpan="8" className="p-12 text-center text-muted-foreground">
+                    <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                    Đang tải dữ liệu...
+                  </td>
+                </tr>
+              ) : (
+                <AnimatePresence>
+                  {paginated.map((order, i) => (
+                    <motion.tr
+                      key={order.order_id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ delay: i * 0.04 }}
+                      className="hover:bg-muted/30 transition-colors group"
+                    >
+                      <td className="px-4 py-3 font-mono text-xs font-bold">{order.order_code}</td>
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{order.customer_name || 'Khách vãng lai'}</td>
+                      <td className="px-4 py-3 text-xs text-muted-foreground max-w-[160px] truncate" title={order.shipping_address_snapshot}>
+                        {order.shipping_address_snapshot || 'Không có'}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                        {new Date(order.created_at).toLocaleDateString('vi-VN')}
+                      </td>
+                      <td className="px-4 py-3 text-center uppercase text-xs font-bold text-muted-foreground">{order.channel}</td>
+                      <td className="px-4 py-3 font-semibold whitespace-nowrap text-primary">{Number(order.total_amount).toLocaleString('vi-VN')}đ</td>
+                      <td className="px-4 py-3">
+                        <span className={cn('px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', statusColors[order.order_status])}>
+                          {statusLabels[order.order_status]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {['pending', 'confirmed', 'processing', 'shipping'].includes(order.order_status) && (
+                            <button 
+                              onClick={() => handleUpdateStatus(order.order_id, order.order_status)}
+                              className="p-1.5 text-blue-500 hover:bg-blue-500/10 rounded-md transition-colors" 
+                              title="Cập nhật trạng thái tiếp theo"
+                            >
+                              <CheckCircle2 size={16} />
+                            </button>
+                          )}
+                          {order.order_status === 'pending' && (
+                            <button 
+                              onClick={() => handleCancelOrder(order.order_id)}
+                              className="p-1.5 text-red-500 hover:bg-red-500/10 rounded-md transition-colors" 
+                              title="Hủy đơn"
+                            >
+                              <X size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+              )}
             </tbody>
           </table>
         </div>
       </div>
 
-      {filtered.length === 0 && (
+      {!isLoading && filtered.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">Không tìm thấy đơn hàng nào.</div>
       )}
 

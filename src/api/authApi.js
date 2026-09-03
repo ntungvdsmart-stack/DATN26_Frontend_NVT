@@ -6,8 +6,9 @@ const authApi = {
     return axiosClient.post('/auth/register', data);
   },
   
-  // Đăng nhập thống nhất — dùng cho tất cả role
+  // Đăng nhập thống nhất — nhận identifier (email hoặc username) + password
   login: (data) => {
+    // data = { identifier, password }
     return axiosClient.post('/auth/login', data);
   }
 };

@@ -1,30 +1,45 @@
 import axiosClient from './axiosClient';
 
 const productApi = {
-  // Lấy danh sách sản phẩm
-  getAll: () => {
-    return axiosClient.get('/products');
-  },
+  // ── Danh sách & chi tiết (Admin) ──────────────────────────────
+  getAllAdmin: () => axiosClient.get('/products/admin/all'),
+  getByIdAdmin: (id) => axiosClient.get(`/products/admin/${id}`),
   
-  // Lấy chi tiết sản phẩm (kèm variants, images)
-  getById: (id) => {
-    return axiosClient.get(`/products/${id}`);
+  // ── Danh sách & chi tiết (Public Storefront) ──────────────────
+  getAllPublic: () => axiosClient.get('/products'),
+  getByIdPublic: (id) => axiosClient.get(`/products/${id}`),
+
+  getFormAttributes: () => axiosClient.get('/products/attributes/all'),
+
+  // ── Upload ảnh từ máy local (multipart/form-data) ──────────────
+  // files: FileList hoặc Array<File>
+  // onProgress: callback(percent) để hiển thị progress bar
+  uploadImages: (files, onProgress) => {
+    const formData = new FormData();
+    Array.from(files).forEach(file => formData.append('images', file));
+    return axiosClient.post('/products/upload-images', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (e) => {
+        if (onProgress && e.total) {
+          onProgress(Math.round((e.loaded * 100) / e.total));
+        }
+      },
+    });
   },
 
-  // Lấy dữ liệu thuộc tính (Categories, Brands, Colors, Sizes...) để làm Form
-  getFormAttributes: () => {
-    return axiosClient.get('/products/attributes/all');
-  },
-  
-  // Tạo sản phẩm mới
-  create: (data) => {
-    return axiosClient.post('/products', data);
-  },
-  
-  // Đổi trạng thái (Khóa/Mở bán)
-  toggleStatus: (id, isActive) => {
-    return axiosClient.patch(`/products/${id}/status`, { is_active: isActive });
-  }
+  // ── CRUD ──────────────────────────────────────────────────────
+  // payload = { product: {...}, variants: [...], images: [...] }
+  create: (payload) => axiosClient.post('/products', payload),
+  update: (id, payload) => axiosClient.put(`/products/${id}`, payload),
+  delete: (id) => axiosClient.delete(`/products/${id}`),
+
+  // Xóa riêng 1 biến thể
+  deleteVariant: (productId, variantId) =>
+    axiosClient.delete(`/products/${productId}/variants/${variantId}`),
+
+  // Bật/Tắt trạng thái bán
+  toggleStatus: (id, isActive) =>
+    axiosClient.patch(`/products/${id}/status`, { is_active: isActive }),
 };
 
 export default productApi;

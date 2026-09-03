@@ -7,6 +7,8 @@ import Login from './pages/Login';
 import POS from './pages/POS';
 import ProductsList from './pages/ProductsList';
 import StoreHome from './pages/StoreHome';
+import ProductDetail from './pages/ProductDetail';
+import Checkout from './pages/Checkout';
 import { OrderManagement, CustomerManagement } from './pages/StaffPages';
 import Reports from './pages/Reports';
 import Support from './pages/Support';
@@ -55,6 +57,8 @@ function App() {
           <Route path="/store" element={<StorefrontLayout />}>
             <Route index element={<StoreHome />} />
             <Route path="products" element={<ComingSoon title="Tất cả sản phẩm" />} />
+            <Route path="products/:id" element={<ProductDetail />} />
+            <Route path="checkout" element={<Checkout />} />
             <Route path="categories" element={<ComingSoon title="Danh mục" />} />
             <Route path="sale" element={<ComingSoon title="Khuyến mãi" />} />
           </Route>

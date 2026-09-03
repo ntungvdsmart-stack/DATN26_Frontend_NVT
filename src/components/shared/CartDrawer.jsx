@@ -1,9 +1,11 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Trash2, Plus, Minus, ArrowRight } from 'lucide-react';
+import { X, Trash2, Plus, Minus, ArrowRight, ShoppingBag } from 'lucide-react';
 import { useCartStore } from '../../store/cartStore';
 
 const CartDrawer = () => {
+  const navigate = useNavigate();
   const { items, isOpen, setIsOpen, removeItem, updateQuantity, totalPrice } = useCartStore();
 
   return (
@@ -73,7 +75,9 @@ const CartDrawer = () => {
                             <Trash2 size={16} />
                           </button>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-1">Size: M | Màu: Đen</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.size ? `Size: ${item.size}` : ''} {item.color ? ` | Màu: ${item.color}` : ''}
+                        </p>
                       </div>
                       
                       <div className="flex items-center justify-between mt-4">
@@ -98,7 +102,13 @@ const CartDrawer = () => {
                   <span>{totalPrice.toLocaleString('vi-VN')}đ</span>
                 </div>
                 <p className="text-xs text-muted-foreground mb-6">Phí vận chuyển và thuế sẽ được tính khi thanh toán.</p>
-                <button className="w-full bg-foreground text-background py-4 flex items-center justify-center gap-2 font-semibold uppercase tracking-widest hover:bg-foreground/90 transition-colors">
+                <button 
+                  onClick={() => {
+                    setIsOpen(false);
+                    navigate('/store/checkout');
+                  }}
+                  className="w-full bg-foreground text-background py-4 flex items-center justify-center gap-2 font-semibold uppercase tracking-widest hover:bg-foreground/90 transition-colors"
+                >
                   Thanh toán <ArrowRight size={18} />
                 </button>
               </div>
@@ -110,6 +120,4 @@ const CartDrawer = () => {
   );
 };
 
-// Cần import ShoppingBag trong đây nếu giỏ trống
-import { ShoppingBag } from 'lucide-react';
 export default CartDrawer;

@@ -28,9 +28,10 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // Đăng nhập thống nhất — Backend tự phân biệt role
-  const login = async (email, password) => {
+  // identifier = email hoặc username (staff có thể dùng cả 2)
+  const login = async (identifier, password) => {
     try {
-      const response = await authApi.login({ email, password });
+      const response = await authApi.login({ identifier, password });
       if (response && response.success) {
         const { token, user: userData } = response.data;
         localStorage.setItem('token', token);

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Search, Plus, Edit2, ShieldAlert, Eye, Lock, Unlock, Loader2, Image as ImageIcon } from 'lucide-react';
+import { Package, Search, Plus, Edit2, ShieldAlert, Eye, Lock, Unlock, Loader2, Image as ImageIcon, Trash2 } from 'lucide-react';
 import productApi from '../api/productApi';
 import ProductForm from '../components/admin/ProductForm';
 
@@ -11,11 +11,12 @@ const ProductsList = () => {
   
   // Drawer/Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editProduct, setEditProduct] = useState(null);
 
   const fetchProducts = async () => {
     setIsLoading(true);
     try {
-      const response = await productApi.getAll();
+      const response = await productApi.getAllAdmin();
       if (response && response.success) {
         setProducts(response.data);
       }
@@ -44,6 +45,31 @@ const ProductsList = () => {
     }
   };
 
+  const handleDelete = async (id, name) => {
+    if (window.confirm(`CẢNH BÁO: Xóa sản phẩm "${name}" sẽ xóa TOÀN BỘ biến thể, hình ảnh và tồn kho liên quan. Bạn có chắc chắn?`)) {
+      try {
+        const res = await productApi.delete(id);
+        if (res && res.success) {
+          fetchProducts();
+        } else {
+          alert(res?.message || 'Có lỗi xảy ra khi xóa');
+        }
+      } catch (error) {
+        alert(error.message || 'Lỗi kết nối');
+      }
+    }
+  };
+
+  const handleOpenEdit = (product) => {
+    setEditProduct(product);
+    setIsFormOpen(true);
+  };
+
+  const handleCloseForm = () => {
+    setIsFormOpen(false);
+    setTimeout(() => setEditProduct(null), 300); // Đợi animation đóng xong mới clear data
+  };
+
   const filteredProducts = products.filter(p => 
     p.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.category_name?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -61,7 +87,7 @@ const ProductsList = () => {
           <p className="text-muted-foreground mt-1 font-medium">Danh mục sản phẩm, biến thể (SKU) và tồn kho tổng</p>
         </div>
         <button 
-          onClick={() => setIsFormOpen(true)}
+          onClick={() => { setEditProduct(null); setIsFormOpen(true); }}
           className="bg-primary text-primary-foreground px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/25"
         >
           <Plus className="w-5 h-5" />
@@ -156,7 +182,9 @@ const ProductsList = () => {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors" title="Sửa (Coming soon)">
+                        <button 
+                          onClick={() => handleOpenEdit(p)}
+                          className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors" title="Sửa">
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button 
@@ -167,6 +195,11 @@ const ProductsList = () => {
                           title={p.is_active ? 'Ngừng bán' : 'Mở bán'}
                         >
                           {p.is_active ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(p.product_id, p.product_name)}
+                          className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors" title="Xóa vĩnh viễn">
+                          <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </td>
@@ -184,9 +217,10 @@ const ProductsList = () => {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 md:p-8">
             <div className="w-full max-w-6xl w-full">
               <ProductForm 
-                onClose={() => setIsFormOpen(false)} 
+                editProduct={editProduct}
+                onClose={handleCloseForm} 
                 onSuccess={() => {
-                  setIsFormOpen(false);
+                  handleCloseForm();
                   fetchProducts();
                 }} 
               />
