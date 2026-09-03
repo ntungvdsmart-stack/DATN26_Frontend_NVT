@@ -11,7 +11,8 @@ import {
   Users, 
   Settings, 
   BarChart3,
-  Home
+  Home,
+  Shield
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { cn } from '../../lib/utils';
@@ -25,6 +26,7 @@ const menuItems = [
   { path: '/payments', name: 'Thanh toán', icon: CreditCard, roles: ['admin'] },
   { path: '/support', name: 'Hỗ trợ & Chat', icon: MessageSquare, roles: ['admin', 'staff'] },
   { path: '/customers', name: 'Khách hàng', icon: Users, roles: ['admin', 'staff'] },
+  { path: '/admin/accounts', name: 'Tài khoản Nội bộ', icon: Shield, roles: ['admin'] },
   { path: '/admin', name: 'Hệ thống', icon: Settings, roles: ['admin'] },
   { path: '/reports', name: 'Báo cáo', icon: BarChart3, roles: ['admin'] },
 ];

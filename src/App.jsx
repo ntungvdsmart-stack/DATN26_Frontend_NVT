@@ -13,6 +13,7 @@ import Support from './pages/Support';
 import OnlineSales from './pages/OnlineSales';
 import Payments from './pages/Payments';
 import SystemConfig from './pages/SystemConfig';
+import AccountManagement from './pages/AccountManagement';
 import { AnimatePresence } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
 import { cn } from './lib/utils';
@@ -69,6 +70,7 @@ function App() {
             <Route path="/support" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><Support /></ProtectedRoute>} />
             <Route path="/customers" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><CustomerManagement /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><SystemConfig /></ProtectedRoute>} />
+            <Route path="/admin/accounts" element={<ProtectedRoute allowedRoles={['admin']}><AccountManagement /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin']}><Reports /></ProtectedRoute>} />
           </Route>
 
