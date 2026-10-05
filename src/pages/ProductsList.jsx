@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Search, Plus, Edit2, ShieldAlert, Eye, Lock, Unlock, Loader2, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Package, Search, Plus, Edit2, ShieldAlert, Eye, Lock, Unlock, Loader2, Image as ImageIcon, Trash2, ExternalLink } from 'lucide-react';
 import productApi from '../api/productApi';
+import { toast } from 'sonner';
 import ProductForm from '../components/admin/ProductForm';
+import { useAuth } from '../context/AuthContext';
 
 const ProductsList = () => {
+  const { role } = useAuth();
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -37,10 +40,10 @@ const ProductsList = () => {
         if (res && res.success) {
           fetchProducts();
         } else {
-          alert(res?.message || 'Có lỗi xảy ra');
+          toast.error(res?.message || 'Có lỗi xảy ra');
         }
       } catch (error) {
-        alert(error.message || 'Lỗi kết nối');
+        toast.error(error.message || 'Lỗi kết nối');
       }
     }
   };
@@ -50,12 +53,13 @@ const ProductsList = () => {
       try {
         const res = await productApi.delete(id);
         if (res && res.success) {
+          toast.success('Xóa sản phẩm thành công');
           fetchProducts();
         } else {
-          alert(res?.message || 'Có lỗi xảy ra khi xóa');
+          toast.error(res?.message || 'Có lỗi xảy ra khi xóa');
         }
       } catch (error) {
-        alert(error.message || 'Lỗi kết nối');
+        toast.error(error.message || 'Lỗi kết nối');
       }
     }
   };
@@ -67,13 +71,17 @@ const ProductsList = () => {
 
   const handleCloseForm = () => {
     setIsFormOpen(false);
-    setTimeout(() => setEditProduct(null), 300); // Đợi animation đóng xong mới clear data
+    setTimeout(() => setEditProduct(null), 300);
   };
 
   const filteredProducts = products.filter(p => 
     p.product_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.category_name?.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  // Staff: được thêm/sửa sản phẩm (nhập kho)
+  // Admin: chỉ xem, bật/tắt trạng thái, xóa
+  const canAddEdit = role === 'staff';
 
   return (
     <div className="p-8 space-y-8 min-h-screen bg-background/50 relative">
@@ -82,17 +90,23 @@ const ProductsList = () => {
         <div>
           <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
             <Package className="w-8 h-8 text-primary" />
-            Quản lý Sản phẩm
+            {canAddEdit ? 'Nhập kho / Sản phẩm' : 'Quản lý Sản phẩm'}
           </h1>
-          <p className="text-muted-foreground mt-1 font-medium">Danh mục sản phẩm, biến thể (SKU) và tồn kho tổng</p>
+          <p className="text-muted-foreground mt-1 font-medium">
+            {canAddEdit 
+              ? 'Nhập hàng mới, cập nhật biến thể (SKU) và tồn kho theo chi nhánh' 
+              : 'Xem danh sách sản phẩm, quản lý trạng thái bán hàng'}
+          </p>
         </div>
-        <button 
-          onClick={() => { setEditProduct(null); setIsFormOpen(true); }}
-          className="bg-primary text-primary-foreground px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/25"
-        >
-          <Plus className="w-5 h-5" />
-          Thêm Sản phẩm
-        </button>
+        {canAddEdit && (
+          <button 
+            onClick={() => { setEditProduct(null); setIsFormOpen(true); }}
+            className="bg-primary text-primary-foreground px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/25"
+          >
+            <Plus className="w-5 h-5" />
+            Nhập sản phẩm mới
+          </button>
+        )}
       </div>
 
       {/* Toolbar */}
@@ -143,7 +157,15 @@ const ProductsList = () => {
                   <tr key={p.product_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors group">
                     <td className="p-4">
                       {p.primary_image ? (
-                        <img src={p.primary_image} alt={p.product_name} className="w-12 h-12 object-cover rounded-lg border border-border/50" onError={(e) => { e.target.src = 'https://via.placeholder.com/48?text=L%E1%BB%97i'; }} />
+                        <img 
+                          src={p.primary_image} 
+                          alt={p.product_name} 
+                          className="w-12 h-12 object-cover rounded-lg border border-border/50" 
+                          onError={(e) => { 
+                            e.currentTarget.onerror = null; 
+                            e.currentTarget.src = 'https://placehold.co/48x48/png?text=Loi'; 
+                          }} 
+                        />
                       ) : (
                         <div className="w-12 h-12 bg-muted rounded-lg border border-border/50 flex items-center justify-center text-muted-foreground">
                           <ImageIcon className="w-5 h-5" />
@@ -182,11 +204,28 @@ const ProductsList = () => {
                     </td>
                     <td className="p-4 text-right">
                       <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button 
-                          onClick={() => handleOpenEdit(p)}
-                          className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors" title="Sửa">
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                        {/* Staff: Sửa / cập nhật tồn kho */}
+                        {canAddEdit ? (
+                          <button 
+                            onClick={() => handleOpenEdit(p)}
+                            className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors" title="Sửa / Cập nhật tồn kho">
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          /* Admin: Chỉ xem chi tiết */
+                          <button 
+                            onClick={() => handleOpenEdit(p)}
+                            className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors" title="Xem chi tiết">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        )}
+                        <a 
+                          href={`/store/products/${p.product_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 text-purple-500 hover:bg-purple-500/10 rounded-lg transition-colors" title="Xem trên web">
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
                         <button 
                           onClick={() => handleToggleStatus(p.product_id, p.is_active)}
                           className={`p-2 rounded-lg transition-colors ${
@@ -222,7 +261,8 @@ const ProductsList = () => {
                 onSuccess={() => {
                   handleCloseForm();
                   fetchProducts();
-                }} 
+                }}
+                readOnly={!canAddEdit}
               />
             </div>
           </div>

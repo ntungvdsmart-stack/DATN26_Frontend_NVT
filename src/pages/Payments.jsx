@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock, CreditCard, Banknote, Download } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { dummyOrders } from '../utils/dummyData';
+import orderApi from '../api/orderApi';
 import { statsData } from '../utils/statsData';
 
 const PAGE_SIZE = 8;
@@ -38,25 +38,41 @@ const Pagination = ({ page, totalPages, onChange }) => (
   </div>
 );
 
-// Mock payment transactions based on dummyOrders
-const transactions = dummyOrders.map((o, i) => {
-  const isVNPay = i % 3 === 0;
-  const isMomo = i % 3 === 1;
-  return {
-    id: `TXN-${o.id.replace('ORD-', '')}`,
-    orderId: o.id,
-    customer: o.customer,
-    amount: o.total,
-    method: isVNPay ? 'VNPay' : isMomo ? 'Momo' : 'Chuyển khoản',
-    status: o.status === 'Đã huỷ' ? 'Thất bại' : o.status === 'Chờ xác nhận' ? 'Đang xử lý' : 'Thành công',
-    date: o.date,
-  };
-});
-
 const Payments = () => {
+  const [orders, setOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('Tất cả');
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const fetchOrders = async () => {
+    setIsLoading(true);
+    try {
+      const res = await orderApi.getAllOrders({ limit: 10000 });
+      if (res && res.success) {
+        setOrders(res.data.items || []);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setIsLoading(false);
+  };
+
+  const transactions = orders.map((o) => {
+    return {
+      id: `TXN-${o.order_code.replace('ORD-', '')}`,
+      orderId: o.order_code,
+      customer: o.customer_name || 'Khách vãng lai',
+      amount: Number(o.total_amount) || 0,
+      method: o.payment_method === 'stripe' ? 'Thẻ Quốc tế (Stripe)' : (o.payment_method === 'bank' ? 'Chuyển khoản' : (o.payment_method === 'momo' ? 'Momo' : (o.payment_method === 'vnpay' ? 'VNPay' : 'Tiền mặt'))),
+      status: o.payment_status === 'success' ? 'Thành công' : (o.payment_status === 'pending' ? 'Đang xử lý' : 'Thất bại'),
+      date: new Date(o.created_at).toLocaleDateString('vi-VN'),
+    };
+  });
 
   const tabs = ['Tất cả', 'Thành công', 'Đang xử lý', 'Thất bại'];
 
@@ -66,7 +82,7 @@ const Payments = () => {
     return matchSearch && matchFilter;
   });
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   return (
@@ -159,7 +175,9 @@ const Payments = () => {
             </thead>
             <tbody className="divide-y divide-border/60">
               <AnimatePresence>
-                {paginated.map((txn, idx) => (
+                {isLoading ? (
+                  <tr><td colSpan="6" className="text-center py-10 text-muted-foreground">Đang tải...</td></tr>
+                ) : paginated.map((txn, idx) => (
                   <motion.tr
                     key={txn.id}
                     initial={{ opacity: 0, y: 10 }}
@@ -185,8 +203,10 @@ const Payments = () => {
                           <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 rounded text-xs font-bold">VNPay</span>
                         ) : txn.method === 'Momo' ? (
                           <span className="px-2 py-0.5 bg-pink-500/10 text-pink-600 rounded text-xs font-bold">MoMo</span>
+                        ) : txn.method === 'Thẻ Quốc tế (Stripe)' ? (
+                          <span className="px-2 py-0.5 bg-purple-500/10 text-purple-600 rounded text-xs font-bold">Stripe</span>
                         ) : (
-                          <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-bold">Chuyển khoản</span>
+                          <span className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs font-bold">{txn.method}</span>
                         )}
                       </div>
                     </td>

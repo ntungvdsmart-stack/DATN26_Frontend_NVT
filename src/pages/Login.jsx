@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Shield, UserCheck, ArrowRight, Eye, EyeOff,
+  ArrowRight, Eye, EyeOff,
   Loader2, AlertCircle, CheckCircle2, User, Lock, Mail, Phone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { toast } from 'sonner';
 
 // ─── Định nghĩa NGOÀI Login ─────────────────────────────────────────────────
 // Đặt ngoài → stable reference → React không unmount/remount → giữ focus
@@ -24,10 +25,14 @@ const InputField = ({ icon: Icon, label, required, children, hint }) => (
 const INPUT_CLS = "w-full px-4 py-2.5 bg-muted/40 border border-border rounded-lg focus:border-foreground focus:ring-1 focus:ring-foreground/20 outline-none transition-all text-sm";
 
 // Trạng thái ban đầu — tách ra ngoài để dùng lại cho reset
-const INITIAL_FIELDS = {
-  identifier: '', email: '', password: '', confirmPassword: '',
-  name: '', phone: '',
-};
+const getInitialFields = () => ({
+  identifier: localStorage.getItem('rememberedIdentifier') || '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+  name: '',
+  phone: '',
+});
 
 // ─── Component Login ──────────────────────────────────────────────────────────
 const Login = () => {
@@ -41,9 +46,10 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('rememberMe') === 'true');
 
   // ── Form fields gộp vào 1 object: ít useState hơn, ít re-render hơn ──
-  const [fields, setFields] = useState(INITIAL_FIELDS);
+  const [fields, setFields] = useState(getInitialFields);
 
   // Helper cập nhật 1 field
   const setField = useCallback((key, value) => {
@@ -52,7 +58,7 @@ const Login = () => {
 
   // ── Reset toàn bộ form ──
   const resetForm = useCallback(() => {
-    setFields(INITIAL_FIELDS);
+    setFields(getInitialFields());
     setErrorMsg('');
     setSuccessMsg('');
     setShowPassword(false);
@@ -87,50 +93,44 @@ const Login = () => {
       if (isLogin) {
         const res = await login(identifier, password);
         if (res?.success) {
+          if (rememberMe) {
+            localStorage.setItem('rememberMe', 'true');
+            localStorage.setItem('rememberedIdentifier', identifier);
+            // Không lưu mật khẩu — bảo mật XSS
+          } else {
+            localStorage.removeItem('rememberMe');
+            localStorage.removeItem('rememberedIdentifier');
+          }
           setSuccessMsg('Đăng nhập thành công! Đang chuyển hướng...');
+          toast.success('Đăng nhập thành công!');
           setTimeout(() => {
-            navigate(res.role === 'admin' || res.role === 'staff' ? '/dashboard' : '/store');
+            navigate(res.role === 'admin' ? '/dashboard' : res.role === 'staff' ? '/pos' : '/store');
           }, 800);
         } else {
           setErrorMsg(res?.message || 'Đăng nhập thất bại');
+          toast.error(res?.message || 'Đăng nhập thất bại');
         }
       } else {
         if (!validateRegister()) { setIsLoading(false); return; }
         const res = await register(name.trim(), email.trim(), password, phone.trim() || undefined);
         if (res?.success) {
-          const loginRes = await login(email.trim(), password);
-          if (loginRes?.success) {
-            setSuccessMsg('Tạo tài khoản thành công! Đang chuyển hướng...');
-            setTimeout(() => navigate('/store'), 800);
-          } else {
-            setSuccessMsg('Tạo tài khoản thành công! Hãy đăng nhập.');
-            setTimeout(() => { setIsLogin(true); resetForm(); }, 1500);
-          }
+          setSuccessMsg('Đăng ký thành công! Đang chuyển về trang đăng nhập...');
+          toast.success('Đăng ký thành công!');
+          setTimeout(() => { 
+            setIsLogin(true); 
+            resetForm(); 
+          }, 1500);
         } else {
           setErrorMsg(res?.message || 'Đăng ký thất bại');
         }
       }
     } catch {
       setErrorMsg('Có lỗi xảy ra. Vui lòng thử lại.');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [fields, isLogin, login, register, navigate, validateRegister, resetForm]);
 
-  // ── Dev login shortcuts ──
-  const handleDevLogin = useCallback(async (devRole) => {
-    setIsLoading(true);
-    setErrorMsg('');
-    const id = devRole === 'admin' ? 'admin@gmail.com' : 'staff1';
-    const pw = devRole === 'admin' ? 'admin123' : '123';
-    const res = await login(id, pw);
-    if (res?.success) {
-      setSuccessMsg(`Đăng nhập ${devRole} thành công!`);
-      setTimeout(() => navigate('/dashboard'), 600);
-    } else {
-      setErrorMsg(`Thất bại: ${res?.message || 'Chưa có tài khoản trong CSDL'}`);
-    }
-    setIsLoading(false);
-  }, [login, navigate]);
 
   // ── Toggle mode (Login ↔ Register) ──
   const handleToggleMode = useCallback(() => {
@@ -270,14 +270,14 @@ const Login = () => {
                 {isLogin ? (
                   /* ── ĐĂNG NHẬP ── */
                   <div className="space-y-4">
-                    <InputField icon={User} label="Email / Tên đăng nhập" required>
+                    <InputField icon={Mail} label="Email" required>
                       <input
-                        type="text" required autoFocus
+                        type="email" required autoFocus
                         value={identifier}
                         onChange={e => setField('identifier', e.target.value)}
                         className={INPUT_CLS}
-                        placeholder="email@example.com hoặc username"
-                        autoComplete="username"
+                        placeholder="email@example.com"
+                        autoComplete="email"
                       />
                     </InputField>
 
@@ -296,7 +296,21 @@ const Login = () => {
                           {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
                         </button>
                       </div>
-                      <div className="text-right mt-1">
+                      <div className="flex justify-between items-center mt-3">
+                        <label className="flex items-center gap-2 cursor-pointer group">
+                          <div className="relative flex items-center justify-center">
+                            <input
+                              type="checkbox"
+                              checked={rememberMe}
+                              onChange={(e) => setRememberMe(e.target.checked)}
+                              className="peer appearance-none w-4 h-4 border-2 border-border rounded bg-transparent checked:bg-foreground checked:border-foreground transition-all cursor-pointer"
+                            />
+                            <CheckCircle2 className="absolute w-3 h-3 text-background opacity-0 peer-checked:opacity-100 pointer-events-none" />
+                          </div>
+                          <span className="text-xs font-semibold text-muted-foreground group-hover:text-foreground transition-colors select-none">
+                            Nhớ mật khẩu
+                          </span>
+                        </label>
                         <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors font-semibold">Quên mật khẩu?</a>
                       </div>
                     </InputField>
@@ -391,24 +405,7 @@ const Login = () => {
               </motion.form>
             </AnimatePresence>
 
-            {/* Dev Only */}
-            <div className="mt-6">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="h-px bg-border flex-1" />
-                <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest bg-muted/40 px-2 py-0.5 rounded">Dev Only</span>
-                <div className="h-px bg-border flex-1" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => handleDevLogin('admin')} disabled={isLoading}
-                  className="flex items-center justify-center gap-1.5 py-2 bg-blue-500/10 text-blue-600 font-bold text-[11px] uppercase tracking-wider rounded-lg hover:bg-blue-500/20 transition-colors border border-blue-500/20 disabled:opacity-50">
-                  <Shield size={12} /> Admin
-                </button>
-                <button onClick={() => handleDevLogin('staff')} disabled={isLoading}
-                  className="flex items-center justify-center gap-1.5 py-2 bg-purple-500/10 text-purple-600 font-bold text-[11px] uppercase tracking-wider rounded-lg hover:bg-purple-500/20 transition-colors border border-purple-500/20 disabled:opacity-50">
-                  <UserCheck size={12} /> Staff
-                </button>
-              </div>
-            </div>
+
 
           </div>
         </motion.div>

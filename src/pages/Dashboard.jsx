@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   TrendingUp, TrendingDown, Package, ShoppingCart, Users, CreditCard,
@@ -6,15 +6,16 @@ import {
   ArrowRight, Zap
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { statsData } from '../utils/statsData';
-import { dummyOrders } from '../utils/dummyData';
+import { statsData as fallbackStatsData } from '../utils/statsData';
+import orderApi from '../api/orderApi';
+import statsApi from '../api/statsApi';
 import { Link } from 'react-router-dom';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // ─── KPI Card ────────────────────────────────────────────
 const KpiCard = ({ label, value, prev, format, icon: Icon, color }) => {
-  const pct = ((value - prev) / prev * 100).toFixed(1);
-  const up = pct > 0;
+  const pct = prev === 0 ? 0 : ((value - prev) / prev * 100).toFixed(1);
+  const up = pct >= 0;
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -67,18 +68,59 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 const Dashboard = () => {
-  const [chartMode, setChartMode] = useState('week'); // 'week' | 'month'
-  const chartData = chartMode === 'week' ? statsData.revenueWeekly : statsData.revenueMonthly;
-  const { kpi } = statsData;
+  const [chartMode, setChartMode] = useState('week');
+  const [chartData, setChartData] = useState([]);
+  
+  const [kpis, setKpis] = useState({
+    doanhThuThang: { label: 'Doanh thu tháng', value: 0, prev: 0 },
+    donHang: { label: 'Tổng đơn hàng', value: 0, prev: 0 },
+    khachMoi: { label: 'Tổng khách hàng', value: 0, prev: 0 },
+    tyLeHoan: { label: 'Tỷ lệ hoàn/hủy', value: 0, prev: 0 },
+  });
+  
+  const [topProducts, setTopProducts] = useState([]);
 
-  const recentOrders = dummyOrders.slice(0, 5);
+  const [recentOrders, setRecentOrders] = useState([]);
+  
+  useEffect(() => {
+    orderApi.getAllOrders().then(res => {
+      if (res && res.success) setRecentOrders(res.data.slice(0, 5));
+    }).catch(() => {});
+    
+    statsApi.getKPIs().then(res => {
+      if (res && res.success) {
+        setKpis({
+          doanhThuThang: { label: 'Tổng doanh thu', value: res.data.revenue, prev: res.data.revenue * 0.9 }, // Mock prev for UI
+          donHang: { label: 'Tổng đơn hàng', value: res.data.orders, prev: res.data.orders * 0.9 },
+          khachMoi: { label: 'Tổng khách hàng', value: res.data.customers, prev: res.data.customers * 0.9 },
+          tyLeHoan: { label: 'Tỷ lệ hoàn/hủy', value: res.data.returnRate.toFixed(1), prev: res.data.returnRate },
+        });
+      }
+    }).catch(() => {});
+    
+    statsApi.getTopProducts().then(res => {
+      if (res && res.success) setTopProducts(res.data);
+    }).catch(() => {});
+  }, []);
 
+  useEffect(() => {
+    statsApi.getRevenueChart(chartMode).then(res => {
+      if (res && res.success) setChartData(res.data);
+    }).catch(() => {});
+  }, [chartMode]);
+
+  const STATUS_LABELS = {
+    pending: 'Chờ xác nhận', confirmed: 'Đã xác nhận', processing: 'Đang xử lý',
+    shipping: 'Đang giao', completed: 'Đã giao', cancelled: 'Đã huỷ', returned: 'Trả hàng'
+  };
   const statusColors = {
     'Đã giao':       'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
     'Đang giao':     'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',
     'Đang xử lý':   'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
     'Chờ xác nhận': 'bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-400',
     'Đã huỷ':       'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
+    'Đã xác nhận':  'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400',
+    'Trả hàng':     'bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-400',
   };
 
   return (
@@ -88,25 +130,27 @@ const Dashboard = () => {
         <h1 className="text-3xl font-black tracking-tight">
           Tổng quan <span className="font-light text-muted-foreground">FashionOS</span>
         </h1>
-        <p className="text-muted-foreground text-sm mt-1">Cập nhật lúc 20:55 — Thứ Tư, 26/08/2026</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          Cập nhật lúc {new Date().toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
+        </p>
       </motion.div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         <KpiCard
-          label={kpi.doanhThuThang.label} value={kpi.doanhThuThang.value} prev={kpi.doanhThuThang.prev}
+          label={kpis.doanhThuThang.label} value={kpis.doanhThuThang.value} prev={kpis.doanhThuThang.prev}
           format={v => `${(v / 1_000_000).toFixed(1)}M đ`} icon={CreditCard} color="bg-emerald-500/10 text-emerald-600"
         />
         <KpiCard
-          label={kpi.donHang.label} value={kpi.donHang.value} prev={kpi.donHang.prev}
+          label={kpis.donHang.label} value={kpis.donHang.value} prev={kpis.donHang.prev}
           format={v => `${v} đơn`} icon={ShoppingCart} color="bg-blue-500/10 text-blue-600"
         />
         <KpiCard
-          label={kpi.khachMoi.label} value={kpi.khachMoi.value} prev={kpi.khachMoi.prev}
+          label={kpis.khachMoi.label} value={kpis.khachMoi.value} prev={kpis.khachMoi.prev}
           format={v => `${v} người`} icon={Users} color="bg-purple-500/10 text-purple-600"
         />
         <KpiCard
-          label={kpi.tyLeHoan.label} value={kpi.tyLeHoan.value} prev={kpi.tyLeHoan.prev}
+          label={kpis.tyLeHoan.label} value={kpis.tyLeHoan.value} prev={kpis.tyLeHoan.prev}
           format={v => `${v}%`} icon={Package} color="bg-amber-500/10 text-amber-600"
         />
       </div>
@@ -124,11 +168,9 @@ const Dashboard = () => {
           </div>
           <div className="mb-6">
             <span className="text-3xl font-black">
-              {chartMode === 'week'
-                ? `${statsData.revenueWeekly.reduce((s, d) => s + d.revenue, 0).toFixed(1)}M đ`
-                : `${statsData.revenueMonthly.reduce((s, d) => s + d.revenue, 0).toFixed(1)}M đ`}
+              {`${(chartData.reduce((s, d) => s + Number(d.revenue || 0), 0) / 1000000).toFixed(1)}M đ`}
             </span>
-            <span className="text-xs text-muted-foreground ml-2">{chartMode === 'week' ? 'tuần này' : '12 tháng gần nhất'}</span>
+            <span className="text-xs text-muted-foreground ml-2">{chartMode === 'week' ? '7 ngày gần nhất' : '12 tháng gần nhất'}</span>
           </div>
           <div className="flex-1 w-full min-h-[220px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -172,17 +214,18 @@ const Dashboard = () => {
         <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
           <h3 className="font-bold text-base mb-4">Sản phẩm bán chạy</h3>
           <div className="space-y-3">
-            {statsData.topProducts.map((p, i) => (
+            {topProducts.map((p, i) => (
               <div key={p.id} className="flex items-center gap-3 group">
                 <span className="text-xs font-black text-muted-foreground w-4">{i + 1}</span>
-                <img src={p.image} alt={p.name} className="w-9 h-11 object-cover rounded-lg flex-shrink-0" />
+                <img src={p.image || fallbackStatsData.topProducts[i]?.image} alt={p.name} className="w-9 h-11 object-cover rounded-lg flex-shrink-0 bg-muted" />
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-semibold truncate">{p.name}</p>
                   <p className="text-[10px] text-muted-foreground">{p.sold} đã bán</p>
                 </div>
-                <p className="text-xs font-bold whitespace-nowrap">{(p.revenue / 1_000_000).toFixed(1)}M</p>
+                <p className="text-xs font-bold whitespace-nowrap">{(Number(p.revenue) / 1_000_000).toFixed(1)}M</p>
               </div>
             ))}
+            {topProducts.length === 0 && <p className="text-xs text-muted-foreground">Chưa có dữ liệu...</p>}
           </div>
         </div>
       </div>
@@ -230,16 +273,16 @@ const Dashboard = () => {
                 <tbody className="divide-y divide-border/50">
                   {recentOrders.map((o, i) => (
                     <motion.tr
-                      key={o.id}
+                      key={o.order_id}
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.07 }}
                     >
-                      <td className="py-3 text-xs font-mono font-bold">{o.id}</td>
-                      <td className="py-3 text-xs font-medium">{o.customer}</td>
-                      <td className="py-3 text-xs font-semibold">{o.total.toLocaleString('vi-VN')}đ</td>
+                      <td className="py-3 text-xs font-mono font-bold">{o.order_code}</td>
+                      <td className="py-3 text-xs font-medium">{o.customer_name || 'Khách vãng lai'}</td>
+                      <td className="py-3 text-xs font-semibold">{Number(o.total_amount).toLocaleString('vi-VN')}đ</td>
                       <td className="py-3">
-                        <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', statusColors[o.status])}>{o.status}</span>
+                        <span className={cn('text-[10px] font-semibold px-2 py-0.5 rounded-full', statusColors[STATUS_LABELS[o.order_status]] || 'bg-muted text-muted-foreground')}>{STATUS_LABELS[o.order_status] || o.order_status}</span>
                       </td>
                     </motion.tr>
                   ))}
@@ -252,9 +295,9 @@ const Dashboard = () => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
             {/* Activity Feed */}
             <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
-              <h3 className="font-bold text-sm mb-4">Hoạt động</h3>
+              <h3 className="font-bold text-sm mb-4">Hoạt động (Demo)</h3>
               <div className="space-y-3">
-                {statsData.recentActivities.slice(0, 5).map(act => {
+                {fallbackStatsData.recentActivities.slice(0, 5).map(act => {
                   const Icon = activityIcon[act.type] || Zap;
                   return (
                     <div key={act.id} className="flex items-start gap-2.5">
@@ -275,12 +318,12 @@ const Dashboard = () => {
             <div className="bg-card border border-border rounded-2xl p-5 shadow-sm">
               <h3 className="font-bold text-sm mb-4 flex items-center gap-2">
                 <AlertTriangle size={14} className="text-amber-500" />
-                Sắp hết hàng
+                Sắp hết hàng (Demo)
               </h3>
               <div className="space-y-3">
-                {statsData.lowStock.map(item => (
+                {fallbackStatsData.lowStock.map(item => (
                   <div key={item.id} className="flex items-center gap-2.5">
-                    <img src={item.image} alt={item.name} className="w-8 h-10 object-cover rounded flex-shrink-0" />
+                    <img src={item.image} alt={item.name} className="w-8 h-10 object-cover rounded flex-shrink-0 bg-muted" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold truncate">{item.name}</p>
                       <p className="text-[10px] text-amber-600 font-bold">{item.stock} còn lại</p>

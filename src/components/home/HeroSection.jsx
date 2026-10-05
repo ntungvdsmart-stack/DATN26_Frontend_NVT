@@ -1,8 +1,20 @@
 import React, { useRef } from 'react';
 import { motion, useScroll, useTransform } from 'framer-motion';
+import { Link } from 'react-router-dom';
+import configApi from '../../api/configApi';
 
 const HeroSection = () => {
   const ref = useRef(null);
+  const [subtitle, setSubtitle] = React.useState('BỘ SƯU TẬP MỚI — THU ĐÔNG 2026');
+
+  React.useEffect(() => {
+    configApi.getSettings().then(res => {
+      if (res?.success && res.data.hero_subtitle) {
+        setSubtitle(res.data.hero_subtitle);
+      }
+    }).catch(() => {});
+  }, []);
+
   const { scrollYProgress } = useScroll({
     target: ref,
     offset: ["start start", "end start"]
@@ -50,15 +62,15 @@ const HeroSection = () => {
           className="max-w-2xl text-white"
         >
           <motion.p variants={textItem} className="uppercase tracking-[0.3em] text-sm md:text-base font-semibold mb-6">
-            BỘ SƯU TẬP MỚI — THU ĐÔNG 2026
+            {subtitle}
           </motion.p>
           <motion.h1 variants={textItem} className="text-5xl md:text-7xl lg:text-8xl font-black uppercase tracking-tighter leading-[0.9] mb-8">
             REDEFINE <br /> <span className="font-light italic">ELEGANCE.</span>
           </motion.h1>
           <motion.div variants={textItem}>
-            <button className="bg-white text-black px-8 py-4 text-sm font-bold tracking-widest uppercase hover:bg-white/90 hover:scale-105 transition-all">
+            <Link to="/store/products" className="inline-block bg-white text-black px-8 py-4 text-sm font-bold tracking-widest uppercase hover:bg-white/90 hover:scale-105 transition-all">
               Khám phá ngay
-            </button>
+            </Link>
           </motion.div>
         </motion.div>
       </div>

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { statsData } from '../utils/statsData';
+import statsApi from '../api/statsApi';
 import { dummyOrders, dummyProducts, dummyCustomers } from '../utils/dummyData';
 import { TrendingUp, TrendingDown, CreditCard, ShoppingCart, Users, Package } from 'lucide-react';
 import { cn } from '../lib/utils';
@@ -30,16 +30,51 @@ const CustomTooltip = ({ active, payload, label, suffix = '' }) => {
 
 const Reports = () => {
   const [period, setPeriod] = useState('month');
+  
+  const [kpis, setKpis] = useState({ revenue: 0, orders: 0, customers: 0, returnRate: 0 });
+  const [chartData, setChartData] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
+  const [categoryStats, setCategoryStats] = useState([]);
+  const [paymentStats, setPaymentStats] = useState([]);
+  const [channelStats, setChannelStats] = useState([]);
 
-  const totalRevenue = statsData.revenueMonthly.reduce((s, d) => s + d.revenue, 0);
-  const totalOrders  = statsData.revenueMonthly.reduce((s, d) => s + d.orders, 0);
-  const avgOrder     = totalRevenue / totalOrders * 1_000_000;
+  useEffect(() => {
+    statsApi.getKPIs().then(res => {
+      if (res && res.success) setKpis(res.data);
+    }).catch(() => {});
+    
+    statsApi.getTopProducts().then(res => {
+      if (res && res.success) setTopProducts(res.data);
+    }).catch(() => {});
+
+    statsApi.getCategoryStats().then(res => {
+      if (res && res.success) setCategoryStats(res.data);
+    }).catch(() => {});
+
+    statsApi.getPaymentStats().then(res => {
+      if (res && res.success) setPaymentStats(res.data);
+    }).catch(() => {});
+
+    statsApi.getChannelStats().then(res => {
+      if (res && res.success) setChannelStats(res.data);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    statsApi.getRevenueChart(period).then(res => {
+      if (res && res.success) setChartData(res.data);
+    }).catch(() => {});
+  }, [period]);
+
+  const totalRevenue = chartData.reduce((s, d) => s + Number(d.revenue || 0), 0);
+  const totalOrders  = chartData.reduce((s, d) => s + Number(d.orders || 0), 0);
+  const avgOrder     = totalOrders > 0 ? (totalRevenue / totalOrders) : 0;
 
   const summaryKpis = [
-    { label: 'Tổng doanh thu (12 tháng)', value: `${totalRevenue.toFixed(1)}M đ`, icon: CreditCard, trend: '+17.9%', up: true, color: 'bg-emerald-500/10 text-emerald-600' },
-    { label: 'Tổng đơn hàng',             value: `${totalOrders} đơn`,             icon: ShoppingCart, trend: '+18.3%', up: true, color: 'bg-blue-500/10 text-blue-600' },
+    { label: 'Tổng doanh thu (biểu đồ)', value: `${(totalRevenue / 1000000).toFixed(1)}M đ`, icon: CreditCard, trend: '+17.9%', up: true, color: 'bg-emerald-500/10 text-emerald-600' },
+    { label: 'Tổng đơn hàng (biểu đồ)',   value: `${totalOrders} đơn`,             icon: ShoppingCart, trend: '+18.3%', up: true, color: 'bg-blue-500/10 text-blue-600' },
     { label: 'Giá trị đơn TB',            value: `${(avgOrder / 1000).toFixed(0)}K đ`, icon: Package,  trend: '-0.4%',  up: false, color: 'bg-amber-500/10 text-amber-600' },
-    { label: 'Khách hàng',                value: `${dummyCustomers.length} người`,  icon: Users,       trend: '+31%',   up: true, color: 'bg-purple-500/10 text-purple-600' },
+    { label: 'Tỉ lệ hoàn hàng (tổng)',        value: `${kpis.returnRate.toFixed(1)}%`,  icon: Users,       trend: '+31%',   up: true, color: 'bg-purple-500/10 text-purple-600' },
   ];
 
   return (
@@ -90,7 +125,7 @@ const Reports = () => {
           <p className="text-xs text-muted-foreground mb-4">12 tháng gần nhất (triệu đồng)</p>
           <div className="flex-1 w-full h-full">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={statsData.revenueMonthly} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="var(--color-primary)" stopOpacity={0.4}/>
@@ -98,7 +133,7 @@ const Reports = () => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" opacity={0.5} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, opacity: 0.6 }} dy={10} />
+                <XAxis dataKey={period === 'week' ? "day" : "month"} axisLine={false} tickLine={false} tick={{ fontSize: 10, opacity: 0.6 }} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, opacity: 0.6 }} dx={-10} />
                 <Tooltip content={<CustomTooltip suffix="M đ" />} />
                 <Area type="monotone" dataKey="revenue" name="Doanh thu" stroke="var(--color-primary)" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
@@ -113,9 +148,9 @@ const Reports = () => {
           <p className="text-xs text-muted-foreground mb-4">Số lượng đơn hàng</p>
           <div className="flex-1 w-full h-full">
             <ResponsiveContainer width="100%" height="100%">
-              <ReBarChart data={statsData.revenueMonthly} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+              <ReBarChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--color-border)" opacity={0.5} />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fontSize: 10, opacity: 0.6 }} dy={10} />
+                <XAxis dataKey={period === 'week' ? "day" : "month"} axisLine={false} tickLine={false} tick={{ fontSize: 10, opacity: 0.6 }} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, opacity: 0.6 }} dx={-10} />
                 <Tooltip content={<CustomTooltip suffix=" đơn" />} />
                 <Bar dataKey="orders" name="Đơn hàng" fill="#3b82f6" radius={[4, 4, 0, 0]} />
@@ -125,8 +160,8 @@ const Reports = () => {
         </div>
       </div>
 
-      {/* Category + Payment + Top Products */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Category + Payment + Channel + Top Products */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {/* Category Revenue (Pie Chart) */}
         <div className="bg-card border border-border rounded-2xl p-6 shadow-sm flex flex-col">
           <h3 className="font-bold mb-4">Doanh thu theo danh mục</h3>
@@ -134,14 +169,38 @@ const Reports = () => {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={statsData.categoryRevenue}
+                  data={categoryStats.length > 0 ? categoryStats : [{name: 'Chưa có data', revenue: 1}]}
                   cx="50%" cy="50%"
                   innerRadius={60} outerRadius={85}
                   paddingAngle={5}
                   dataKey="revenue"
                 >
-                  {statsData.categoryRevenue.map((entry, index) => (
+                  {(categoryStats.length > 0 ? categoryStats : [{name: 'Chưa có data', revenue: 1}]).map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={catColors[index % catColors.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip suffix="M đ" />} />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Channel Revenue (Pie Chart) */}
+        <div className="bg-card border border-border rounded-2xl p-6 shadow-sm flex flex-col">
+          <h3 className="font-bold mb-4">Doanh thu theo kênh</h3>
+          <div className="flex-1 min-h-[250px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={channelStats.length > 0 ? channelStats : [{name: 'Chưa có data', revenue: 1}]}
+                  cx="50%" cy="50%"
+                  innerRadius={60} outerRadius={85}
+                  paddingAngle={5}
+                  dataKey="revenue"
+                >
+                  {(channelStats.length > 0 ? channelStats : [{name: 'Chưa có data', revenue: 1}]).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={payColors[index % payColors.length]} />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip suffix="M đ" />} />
@@ -158,12 +217,12 @@ const Reports = () => {
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={statsData.paymentMethods}
+                  data={paymentStats.length > 0 ? paymentStats : [{name: 'Chưa có data', count: 1}]}
                   cx="50%" cy="50%"
                   outerRadius={85}
                   dataKey="count"
                 >
-                  {statsData.paymentMethods.map((entry, index) => (
+                  {(paymentStats.length > 0 ? paymentStats : [{name: 'Chưa có data', count: 1}]).map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={payColors[index % payColors.length]} />
                   ))}
                 </Pie>
@@ -178,15 +237,15 @@ const Reports = () => {
         <div className="bg-card border border-border rounded-2xl p-6 shadow-sm">
           <h3 className="font-bold mb-4">Top 5 sản phẩm</h3>
           <div className="space-y-4">
-            {statsData.topProducts.map((p, i) => {
-              const maxSold = statsData.topProducts[0].sold;
+            {topProducts.map((p, i) => {
+              const maxSold = topProducts[0]?.sold || 1;
               return (
                 <div key={p.id} className="space-y-1">
                   <div className="flex items-center gap-2">
-                    <img src={p.image} alt={p.name} className="w-7 h-8 object-cover rounded flex-shrink-0" />
+                    <img src={p.image || dummyProducts[i]?.images[0]} alt={p.name} className="w-7 h-8 object-cover rounded flex-shrink-0 bg-muted" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold truncate">{p.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{p.sold} bán · {(p.revenue / 1_000_000).toFixed(1)}M đ</p>
+                      <p className="text-[10px] text-muted-foreground">{p.sold} bán · {(Number(p.revenue) / 1_000_000).toFixed(1)}M đ</p>
                     </div>
                   </div>
                   <div className="h-1 bg-muted rounded-full overflow-hidden">
@@ -199,6 +258,7 @@ const Reports = () => {
                 </div>
               );
             })}
+            {topProducts.length === 0 && <p className="text-xs text-muted-foreground">Chưa có dữ liệu</p>}
           </div>
         </div>
       </div>
@@ -216,15 +276,18 @@ const Reports = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {statsData.revenueWeekly.map((d, i) => {
-                const prev = statsData.revenueWeekly[i - 1];
-                const diff = prev ? ((d.revenue - prev.revenue) / prev.revenue * 100).toFixed(1) : null;
+              {chartData.map((d, i) => {
+                const prev = chartData[i - 1];
+                const rev = Number(d.revenue || 0);
+                const prevRev = prev ? Number(prev.revenue || 0) : 0;
+                const diff = prevRev ? ((rev - prevRev) / prevRev * 100).toFixed(1) : null;
+                const ordersCount = Number(d.orders || 0);
                 return (
-                  <motion.tr key={d.day} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.07 }}>
-                    <td className="py-3 font-bold">{d.day}</td>
-                    <td className="py-3 font-semibold">{d.revenue.toFixed(1)}M đ</td>
-                    <td className="py-3">{d.orders} đơn</td>
-                    <td className="py-3 text-muted-foreground">{((d.revenue * 1_000_000) / d.orders / 1000).toFixed(0)}K đ</td>
+                  <motion.tr key={d.day || d.month} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.07 }}>
+                    <td className="py-3 font-bold">{d.day || d.month}</td>
+                    <td className="py-3 font-semibold">{(rev / 1000000).toFixed(1)}M đ</td>
+                    <td className="py-3">{ordersCount} đơn</td>
+                    <td className="py-3 text-muted-foreground">{ordersCount ? (rev / ordersCount / 1000).toFixed(0) : 0}K đ</td>
                     <td className="py-3">
                       {diff !== null && (
                         <span className={cn('text-xs font-semibold flex items-center gap-0.5', parseFloat(diff) >= 0 ? 'text-emerald-600' : 'text-red-500')}>
@@ -236,6 +299,7 @@ const Reports = () => {
                   </motion.tr>
                 );
               })}
+              {chartData.length === 0 && <tr><td colSpan="5" className="py-4 text-center text-xs text-muted-foreground">Chưa có dữ liệu</td></tr>}
             </tbody>
           </table>
         </div>

@@ -1,15 +1,60 @@
-import React, { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Settings, Store, Shield, CreditCard, Mail, Bell, Globe, Save } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Settings, Store, Shield, CreditCard, Mail, Bell, Globe, Save, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import configApi from '../api/configApi';
+import { toast } from 'sonner';
 
 const SystemConfig = () => {
   const [activeTab, setActiveTab] = useState('general');
   const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [settings, setSettings] = useState({
+    store_name: '',
+    store_phone: '',
+    store_email: '',
+    store_address: '',
+    tax_rate: '10',
+    shipping_fee: '30000',
+    free_shipping_threshold: '500000',
+    hero_subtitle: 'BỘ SƯU TẬP MỚI — THU ĐÔNG 2026'
+  });
 
-  const handleSave = () => {
+  useEffect(() => {
+    const fetchSettings = async () => {
+      setIsLoading(true);
+      try {
+        const res = await configApi.getSettings();
+        if (res && res.success && res.data) {
+          setSettings(prev => ({ ...prev, ...res.data }));
+        }
+      } catch (error) {
+        console.error('Failed to fetch settings', error);
+      }
+      setIsLoading(false);
+    };
+    fetchSettings();
+  }, []);
+
+  const handleSave = async () => {
     setIsSaving(true);
-    setTimeout(() => setIsSaving(false), 800);
+    try {
+      const res = await configApi.updateSettings(settings);
+      if (res && res.success) {
+        toast.success('Đã lưu cấu hình thành công!');
+      } else {
+        toast.error(res?.message || 'Có lỗi xảy ra khi lưu cấu hình');
+      }
+    } catch (error) {
+      toast.error('Có lỗi xảy ra khi lưu cấu hình');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setSettings(prev => ({ ...prev, [name]: value }));
   };
 
   const tabs = [
@@ -77,19 +122,19 @@ const SystemConfig = () => {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Tên cửa hàng</label>
-                      <input type="text" defaultValue="FashionOS" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                      <input type="text" name="store_name" value={settings.store_name || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Hotline</label>
-                      <input type="text" defaultValue="1900 1234" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                      <input type="text" name="store_phone" value={settings.store_phone || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Email liên hệ</label>
-                      <input type="email" defaultValue="support@fashionos.com" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                      <input type="email" name="store_email" value={settings.store_email || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
                     </div>
                     <div className="space-y-2 md:col-span-2">
                       <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Địa chỉ trụ sở</label>
-                      <input type="text" defaultValue="123 Nguyễn Văn Linh, Quận 7, TP. Hồ Chí Minh" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                      <input type="text" name="store_address" value={settings.store_address || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
                     </div>
                   </div>
                 </div>
@@ -104,6 +149,23 @@ const SystemConfig = () => {
                     <div className="space-y-2">
                       <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Instagram URL</label>
                       <input type="text" defaultValue="https://instagram.com/fashionos" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-6 border-t border-border">
+                  <h3 className="text-lg font-bold mb-4">Cấu hình Vận chuyển & Giao diện</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Phí ship (VNĐ)</label>
+                      <input type="number" name="shipping_fee" value={settings.shipping_fee || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Mức freeship (VNĐ)</label>
+                      <input type="number" name="free_shipping_threshold" value={settings.free_shipping_threshold || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Phụ đề Banner Trang chủ (Hero Subtitle)</label>
+                      <input type="text" name="hero_subtitle" value={settings.hero_subtitle || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
                     </div>
                   </div>
                 </div>
@@ -154,7 +216,7 @@ const SystemConfig = () => {
                   </div>
                   <div className="space-y-2 max-w-xs">
                     <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Phần trăm thuế (%)</label>
-                    <input type="number" defaultValue="10" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
+                    <input type="number" name="tax_rate" value={settings.tax_rate || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
                   </div>
                 </div>
               </motion.div>

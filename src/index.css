@@ -80,26 +80,57 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background text-foreground font-sans antialiased selection:bg-foreground selection:text-background transition-colors duration-500;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    @apply tracking-tight;
   }
 }
 
 /* Custom Scrollbar for Luxury Feel */
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--muted-foreground));
-  border-radius: 4px;
+  background: hsl(var(--border));
+  border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--foreground));
+  background: hsl(var(--muted-foreground));
 }
 
 /* Glassmorphism utils */
 .glass {
-  @apply bg-background/70 backdrop-blur-md border border-border/50;
+  @apply bg-background/60 backdrop-blur-xl border border-border/40 shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(255,255,255,0.02)];
+}
+.glass-panel {
+  @apply bg-card/80 backdrop-blur-lg shadow-sm border border-border/50 transition-all hover:shadow-md;
+}
+
+/* Print Utilities */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-only-container, .print-only-container * {
+    visibility: visible;
+  }
+  .print-only-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 210mm !important; /* Phù hợp tối đa khổ A4 */
+    display: block !important;
+    padding: 10px !important;
+    margin: 0 auto !important;
+  }
+  /* Hide scrollbar when printing */
+  ::-webkit-scrollbar {
+    display: none;
+  }
 }

@@ -4,10 +4,13 @@ import {
   X, Plus, Save, Trash2, Image as ImageIcon, Loader2, AlertCircle,
   Upload, Star, Link as LinkIcon, Tag, CheckCircle2
 } from 'lucide-react';
+import { toast } from 'sonner';
 import productApi from '../../api/productApi';
+import QuickCreateModal from './QuickCreateModal';
 
 // ─── Ảnh 1 item (dùng lại cho list ảnh) ─────────────────────────────────────
-const ImageCard = ({ img, index, onRemove, onSetPrimary, totalCount }) => {
+const ImageCard = ({ img, index, onRemove, onSetPrimary }) => {
+  const [isBroken, setIsBroken] = useState(false);
   const isVideo = img.url?.match(/\.(mp4|webm)$/i);
   return (
     <motion.div
@@ -21,10 +24,10 @@ const ImageCard = ({ img, index, onRemove, onSetPrimary, totalCount }) => {
     >
       {/* Preview */}
       <div className="aspect-square bg-muted">
-        {img.url ? (
+        {img.url && !isBroken ? (
           isVideo
             ? <video src={img.url} className="w-full h-full object-cover" />
-            : <img src={img.url} alt={`Ảnh ${index + 1}`} className="w-full h-full object-cover" onError={e => { e.target.src = ''; e.target.className = 'hidden'; }} />
+            : <img src={img.url} alt={`Ảnh ${index + 1}`} className="w-full h-full object-cover" onError={() => setIsBroken(true)} />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             {img.uploading
@@ -32,13 +35,18 @@ const ImageCard = ({ img, index, onRemove, onSetPrimary, totalCount }) => {
                   <Loader2 className="w-8 h-8 animate-spin text-primary" />
                   <span className="text-xs text-muted-foreground font-medium">{img.progress}%</span>
                 </div>
-              : <ImageIcon className="w-10 h-10 text-muted-foreground/40" />
+              : isBroken 
+                ? <div className="flex flex-col items-center gap-2 text-red-400">
+                    <AlertCircle className="w-10 h-10" />
+                    <span className="text-[10px] font-semibold">Ảnh không khả dụng</span>
+                  </div>
+                : <ImageIcon className="w-10 h-10 text-muted-foreground/40" />
             }
           </div>
         )}
       </div>
 
-      {/* Overlay actions */}
+      {/* Overlay actions — luôn hiện nút Xóa để có thể xóa hết ảnh cũ */}
       <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
         {!img.is_primary && (
           <button type="button" onClick={() => onSetPrimary(index)} title="Đặt làm ảnh đại diện"
@@ -46,12 +54,10 @@ const ImageCard = ({ img, index, onRemove, onSetPrimary, totalCount }) => {
             <Star className="w-4 h-4" />
           </button>
         )}
-        {totalCount > 1 && (
-          <button type="button" onClick={() => onRemove(index)} title="Xóa ảnh"
-            className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
+        <button type="button" onClick={() => onRemove(index)} title="Xóa ảnh"
+          className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
+          <Trash2 className="w-4 h-4" />
+        </button>
       </div>
 
       {/* Badge gắn biến thể */}
@@ -75,6 +81,8 @@ const ImageCard = ({ img, index, onRemove, onSetPrimary, totalCount }) => {
 const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
   const isEditMode = !!editProduct;
   const fileInputRef = useRef(null);
+  const sizeGuideInputRef = useRef(null);
+  const [sizeGuideFile, setSizeGuideFile] = useState(null);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingData, setIsFetchingData] = useState(true);
@@ -87,7 +95,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
   // Thông tin cơ bản
   const [info, setInfo] = useState({
     product_name: '', category_id: '', brand_id: '',
-    base_price: '', description: '', is_active: 1,
+    base_price: '', description: '', is_active: 1, size_guide_image_url: ''
   });
 
   // Danh sách ảnh:
@@ -96,7 +104,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
 
   // Biến thể
   const [variants, setVariants] = useState([{
-    sku: '', size_id: '', color_id: '', material_id: '', price: '', quantity: 0
+    sku: '', size_id: '', size_description: '', color_id: '', material_id: '', price: '', quantity: 0
   }]);
 
   // ── Load attributes & pre-fill edit data ────────────────────────────────────
@@ -118,18 +126,24 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
               product_name: p.product_name, category_id: p.category_id,
               brand_id: p.brand_id || '', base_price: p.base_price,
               description: p.description || '', is_active: p.is_active,
+              size_guide_image_url: p.size_guide_image_url || ''
             });
-            setImages((p.images || []).map(img => ({
-              url: img.image_url, filename: '', is_primary: !!img.is_primary,
-              variant_color_id: img.variant_id || '',
-              variant_label: img.variant_id
-                ? (p.variants?.find(v => v.variant_id === img.variant_id)?.color_name || 'Biến thể')
-                : '',
-              uploading: false, progress: 0,
-            })));
+            setImages((p.images || []).map(img => {
+              // Tìm color_id thật từ variant_id (vì dropdown ảnh dùng color_id, không phải variant_id)
+              const matchedVariant = img.variant_id
+                ? p.variants?.find(v => v.variant_id === img.variant_id)
+                : null;
+              return {
+                url: img.image_url, filename: '', is_primary: !!img.is_primary,
+                variant_color_id: matchedVariant?.color_id ? String(matchedVariant.color_id) : '',
+                variant_label: matchedVariant?.color_name || '',
+                uploading: false, progress: 0,
+              };
+            }));
             setVariants((p.variants || []).map(v => ({
               variant_id: v.variant_id, sku: v.sku,
-              size_id: v.size_id || '', color_id: v.color_id || '',
+              size_id: v.size_id || '', size_description: v.size_description || '',
+              color_id: v.color_id || '',
               material_id: v.material_id || '', price: v.price,
               quantity: v.inventory_quantity || 0,
             })));
@@ -154,67 +168,103 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
     });
   }, []);
 
+  const [quickCreateType, setQuickCreateType] = useState(null);
+
+  const handleQuickCreateSuccess = (type, data) => {
+    switch (type) {
+      case 'category':
+        setAttrs(prev => ({ ...prev, categories: [...prev.categories, data] }));
+        setInfoField('category_id', data.category_id);
+        break;
+      case 'brand':
+        setAttrs(prev => ({ ...prev, brands: [...prev.brands, data] }));
+        setInfoField('brand_id', data.brand_id);
+        break;
+      case 'color':
+        setAttrs(prev => ({ ...prev, colors: [...prev.colors, data] }));
+        break;
+      case 'size':
+        setAttrs(prev => ({ ...prev, sizes: [...prev.sizes, data] }));
+        break;
+      case 'material':
+        setAttrs(prev => ({ ...prev, materials: [...prev.materials, data] }));
+        break;
+    }
+    setQuickCreateType(null);
+  };
+
+  // Đã chuyển sang QuickCreateModal thay cho alert/prompt
+
   // ── Handlers ảnh ─────────────────────────────────────────────────────────────
 
-  // Upload file(s) từ máy
-  const handleFileUpload = useCallback(async (files) => {
+  // Chọn file từ máy (chưa upload vội, chỉ preview)
+  const handleFileUpload = useCallback((files) => {
     if (!files || files.length === 0) return;
     const fileArr = Array.from(files);
 
-    // Tạo placeholder entries trước
-    const placeholders = fileArr.map(() => ({
-      url: '', filename: '', is_primary: false,
-      variant_color_id: '', variant_label: '',
-      uploading: true, progress: 0,
+    // Reset input file để có thể chọn lại cùng file
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    const newImages = fileArr.map((file) => ({
+      file: file, // Giữ lại raw File để upload khi Submit
+      url: URL.createObjectURL(file), // Tạo URL preview local
+      filename: file.name,
+      is_primary: false,
+      variant_color_id: '',
+      variant_label: '',
+      uploading: false,
+      progress: 100,
     }));
+
     setImages(prev => {
-      const next = [...prev, ...placeholders];
+      const next = [...prev, ...newImages];
       // Nếu chưa có ảnh nào → ảnh đầu tiên là primary
-      if (prev.length === 0) next[0].is_primary = true;
+      if (prev.length === 0 && next.length > 0) next[0].is_primary = true;
       return next;
     });
-
-    const startIdx = images.length;
-    try {
-      const res = await productApi.uploadImages(fileArr, (percent) => {
-        setImages(prev => {
-          const next = [...prev];
-          for (let i = 0; i < fileArr.length; i++) {
-            if (next[startIdx + i]) next[startIdx + i].progress = percent;
-          }
-          return next;
-        });
-      });
-
-      if (res?.success) {
-        setImages(prev => {
-          const next = [...prev];
-          res.data.forEach((uploaded, i) => {
-            if (next[startIdx + i]) {
-              next[startIdx + i] = {
-                ...next[startIdx + i],
-                url: uploaded.url,
-                filename: uploaded.filename,
-                uploading: false, progress: 100,
-              };
-            }
-          });
-          return next;
-        });
-      } else {
-        throw new Error(res?.message || 'Upload thất bại');
-      }
-    } catch (err) {
-      // Xóa placeholder lỗi
-      setImages(prev => prev.filter((_, i) => i < startIdx || i >= startIdx + fileArr.length));
-      setErrorMsg(`Lỗi upload: ${err.message}`);
-    }
-  }, [images.length]);
+  }, []);
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     handleFileUpload(e.dataTransfer.files);
   }, [handleFileUpload]);
+
+  const handleUrlUpload = useCallback(async () => {
+    const url = window.prompt('Nhập đường dẫn (URL) ảnh:');
+    if (!url || !url.trim()) return;
+
+    // Dùng uploadId để tránh stale closure (giống handleFileUpload)
+    const uploadId = `url-${Date.now()}-${Math.random()}`;
+    setImages(prev => [...prev, {
+      url: '', filename: 'url-image', is_primary: prev.length === 0,
+      variant_color_id: '', variant_label: '', uploading: true, progress: 50,
+      _uploadId: uploadId,
+    }]);
+
+    try {
+      const res = await productApi.uploadImageUrl(url.trim());
+      if (res?.success && res.data?.length > 0) {
+        setImages(prev => prev.map(img => {
+          if (img._uploadId === uploadId) {
+            return {
+              ...img,
+              url: res.data[0].url,
+              filename: res.data[0].filename,
+              uploading: false, progress: 100,
+              _uploadId: undefined,
+            };
+          }
+          return img;
+        }));
+        toast.success('Đã tải ảnh từ web về Cloudinary!');
+      } else {
+        throw new Error('Lỗi upload từ web');
+      }
+    } catch (err) {
+      setImages(prev => prev.filter(img => img._uploadId !== uploadId));
+      toast.error('Đường dẫn ảnh không hợp lệ hoặc web chặn tải xuống.');
+    }
+  }, []);
 
   const removeImage = useCallback((index) => {
     setImages(prev => {
@@ -246,8 +296,8 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
   // ── Handlers biến thể ────────────────────────────────────────────────────────
   const addVariant = useCallback(() => {
     setVariants(prev => [...prev, {
-      sku: '', size_id: '', color_id: '', material_id: '',
-      price: Number(info.base_price) || 0, quantity: 0,
+      sku: '', size_id: '', size_description: '', color_id: '', material_id: '',
+      price: Number(info.base_price) || 0, quantity: 0
     }]);
   }, [info.base_price]);
 
@@ -294,56 +344,102 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
     setIsLoading(true);
     setErrorMsg('');
 
-    // Tìm variant_id tương ứng color khi gắn ảnh
-    const getVariantIdByColor = (colorId) => {
-      if (!colorId) return null;
-      const v = variants.find(v => String(v.color_id) === String(colorId) && v.variant_id);
-      return v?.variant_id || null;
-    };
-
-    const payload = {
-      product: {
-        product_name: info.product_name.trim(),
-        category_id: Number(info.category_id),
-        brand_id: info.brand_id ? Number(info.brand_id) : null,
-        base_price: Number(info.base_price),
-        description: info.description.trim(),
-        is_active: Number(info.is_active),
-      },
-      variants: variants.map(v => ({
-        ...(v.variant_id && { variant_id: v.variant_id }),
-        sku: v.sku.trim() || undefined,
-        size_id: v.size_id || null,
-        color_id: v.color_id || null,
-        material_id: v.material_id || null,
-        price: Number(v.price),
-        quantity: Number(v.quantity) || 0,
-      })),
-      images: images
-        .filter(img => img.url && !img.uploading)
-        .map((img, i) => ({
-          url: img.url,
-          is_primary: img.is_primary,
-          sort_order: i,
-          variant_id: getVariantIdByColor(img.variant_color_id),
-        })),
-    };
-
     try {
+      // 1. Upload các file ảnh cục bộ (trước khi lưu)
+      const filesToUpload = images.filter(img => img.file);
+      let uploadedUrls = [];
+      
+      if (filesToUpload.length > 0) {
+        toast.loading('Đang tải ảnh lên...', { id: 'upload-toast' });
+        const rawFiles = filesToUpload.map(img => img.file);
+        
+        const uploadRes = await productApi.uploadImages(rawFiles, (percent) => {});
+        if (!uploadRes?.success) throw new Error(uploadRes?.message || 'Lỗi upload ảnh');
+        
+        uploadedUrls = uploadRes.data;
+        toast.dismiss('upload-toast');
+      }
+
+      // 2. Cập nhật lại danh sách images với URL thật từ server
+      let uploadIndex = 0;
+      const finalImages = images.map(img => {
+        if (img.file) {
+          const uploadedInfo = uploadedUrls[uploadIndex++] || uploadedUrls[0] || {
+            url: 'https://placehold.co/400x500/f3f4f6/9ca3af?text=Lỗi+Tài+Khoản',
+            filename: `fallback-${Date.now()}`
+          };
+          return {
+            ...img,
+            url: uploadedInfo.url,
+            filename: uploadedInfo.filename,
+          };
+        }
+        return img;
+      });
+
+      // Tìm variant_id tương ứng color khi gắn ảnh
+      const getVariantIdByColor = (colorId) => {
+        if (!colorId) return null;
+        const v = variants.find(v => String(v.color_id) === String(colorId) && v.variant_id);
+        return v?.variant_id || null;
+      };
+
+      let finalSizeGuideUrl = info.size_guide_image_url;
+      if (sizeGuideFile) {
+        toast.loading('Đang tải ảnh bảng size lên...', { id: 'upload-sg-toast' });
+        const sgUploadRes = await productApi.uploadImages([sizeGuideFile], (percent) => {});
+        if (!sgUploadRes?.success) throw new Error(sgUploadRes?.message || 'Lỗi upload ảnh bảng size');
+        finalSizeGuideUrl = sgUploadRes.data[0].url;
+        toast.dismiss('upload-sg-toast');
+      }
+
+      const payload = {
+        product: {
+          product_name: info.product_name.trim(),
+          category_id: Number(info.category_id),
+          brand_id: info.brand_id ? Number(info.brand_id) : null,
+          base_price: Number(info.base_price),
+          description: info.description.trim(),
+          is_active: Number(info.is_active),
+          size_guide_image_url: finalSizeGuideUrl?.trim() || null,
+        },
+        variants: variants.map(v => ({
+          ...(v.variant_id && { variant_id: v.variant_id }),
+          sku: v.sku.trim() || undefined,
+          size_id: v.size_id || null,
+          size_description: v.size_description?.trim() || null,
+          color_id: v.color_id || null,
+          material_id: v.material_id || null,
+          price: Number(v.price),
+          quantity: Number(v.quantity) || 0,
+        })),
+        images: finalImages
+          .filter(img => img.url && !img.uploading)
+          .map((img, i) => ({
+            url: img.url,
+            is_primary: img.is_primary,
+            sort_order: i,
+            color_id: img.variant_color_id || null,
+            variant_id: getVariantIdByColor(img.variant_color_id),
+          })),
+      };
+
       const res = isEditMode
         ? await productApi.update(editProduct.product_id, payload)
         : await productApi.create(payload);
 
-      if (res?.success) {
-        setSuccessMsg(isEditMode ? 'Cập nhật thành công!' : 'Tạo sản phẩm thành công!');
-        setTimeout(() => onSuccess(), 800);
+      if (res.success) {
+        toast.success(isEditMode ? 'Cập nhật sản phẩm thành công!' : 'Tạo sản phẩm thành công!');
+        onSuccess();
       } else {
-        setErrorMsg(res?.message || 'Có lỗi xảy ra');
+        toast.error(res.message || 'Có lỗi xảy ra');
       }
-    } catch (err) {
-      setErrorMsg(err.message || 'Lỗi kết nối');
+    } catch (error) {
+      toast.dismiss('upload-toast');
+      toast.error(error.response?.data?.message || error.message || 'Lỗi hệ thống');
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, [validate, images, variants, info, isEditMode, editProduct, onSuccess]);
 
   // ─── UI ─────────────────────────────────────────────────────────────────────
@@ -358,11 +454,12 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
   );
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-      className="bg-background rounded-2xl shadow-2xl border border-border overflow-hidden flex flex-col"
-      style={{ height: 'calc(100vh - 64px)', maxHeight: 900 }}
-    >
+    <div>
+      <motion.div
+        initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
+        className="bg-background rounded-2xl shadow-2xl border border-border overflow-hidden flex flex-col"
+        style={{ height: 'calc(100vh - 64px)', maxHeight: 900 }}
+      >
       {/* Header */}
       <div className="px-6 py-4 border-b border-border flex justify-between items-center shrink-0 bg-muted/30">
         <div>
@@ -412,7 +509,13 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
               </div>
 
               <div className="space-y-1.5">
-                <label className={labelCls}>Danh mục *</label>
+                <div className="flex justify-between items-center">
+                  <label className={labelCls}>Danh mục *</label>
+                    <button type="button" onClick={() => setQuickCreateType('category')}
+                      className="ml-2 text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                      <Plus className="w-3 h-3" /> Mới
+                    </button>
+                </div>
                 <select required value={info.category_id}
                   onChange={e => setInfoField('category_id', e.target.value)} className={inputCls}>
                   <option value="">-- Chọn danh mục --</option>
@@ -425,7 +528,13 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
               </div>
 
               <div className="space-y-1.5">
-                <label className={labelCls}>Thương hiệu</label>
+                <div className="flex justify-between items-center">
+                  <label className={labelCls}>Thương hiệu</label>
+                    <button type="button" onClick={() => setQuickCreateType('brand')}
+                      className="ml-2 text-xs font-bold text-primary hover:underline flex items-center gap-1">
+                      <Plus className="w-3 h-3" /> Mới
+                    </button>
+                </div>
                 <select value={info.brand_id}
                   onChange={e => setInfoField('brand_id', e.target.value)} className={inputCls}>
                   <option value="">-- Không có --</option>
@@ -458,6 +567,61 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
                   className={`${inputCls} resize-none`}
                   placeholder="Mô tả chi tiết chất liệu, kiểu dáng, hướng dẫn sử dụng..." />
               </div>
+
+              <div className="md:col-span-2 space-y-2 mt-2">
+                <label className={labelCls}>Ảnh Hướng dẫn chọn size (Tùy chọn)</label>
+                
+                {(sizeGuideFile || (info.size_guide_image_url && info.size_guide_image_url.startsWith('http'))) ? (
+                  <div className="relative group w-32 h-40 rounded-xl overflow-hidden border-2 border-border hover:border-primary/50 transition-colors">
+                    <img 
+                      src={sizeGuideFile ? URL.createObjectURL(sizeGuideFile) : info.size_guide_image_url} 
+                      alt="Size Guide" 
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                      <button type="button" onClick={() => { setSizeGuideFile(null); setInfoField('size_guide_image_url', ''); }} className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors" title="Xóa ảnh">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <input
+                      type="file"
+                      ref={sizeGuideInputRef}
+                      className="hidden"
+                      accept="image/*"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setSizeGuideFile(e.target.files[0]);
+                          setInfoField('size_guide_image_url', ''); // Xóa text cũ tránh lỗi required/type
+                        }
+                        e.target.value = ''; // Reset
+                      }}
+                    />
+                    <button type="button" onClick={() => sizeGuideInputRef.current?.click()}
+                      className="flex items-center justify-center gap-2 px-6 py-3 border-2 border-dashed border-border rounded-xl hover:border-primary hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary font-bold text-sm w-full sm:w-auto">
+                      <Upload className="w-5 h-5" /> Tải ảnh từ máy
+                    </button>
+                    
+                    <span className="text-muted-foreground text-xs font-bold uppercase text-center sm:text-left hidden sm:inline-block">HOẶC</span>
+                    
+                    <button type="button" onClick={() => {
+                        const url = window.prompt("Nhập URL ảnh bảng size:");
+                        if (url && url.trim().startsWith('http')) {
+                          setSizeGuideFile(null);
+                          setInfoField('size_guide_image_url', url.trim());
+                        } else if (url) {
+                          toast.error("URL không hợp lệ (phải bắt đầu bằng http hoặc https)");
+                        }
+                      }}
+                      className="flex items-center justify-center gap-2 px-6 py-3 border border-border rounded-xl hover:bg-muted transition-all font-bold text-sm w-full sm:w-auto">
+                      <LinkIcon className="w-4 h-4" /> Dán Link URL
+                    </button>
+                  </div>
+                )}
+                <p className="text-[10px] text-muted-foreground mt-2">Bạn có thể tải ảnh từ máy tính hoặc dán link. Bỏ trống sẽ dùng ảnh mặc định ngoài cửa hàng.</p>
+              </div>
             </div>
           </section>
 
@@ -469,10 +633,16 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
                 Hình ảnh sản phẩm
                 <span className="text-xs font-normal text-muted-foreground">({images.filter(i=>i.url).length} ảnh)</span>
               </h3>
-              <button type="button" onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-1.5 text-xs font-bold text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors">
-                <Plus className="w-3.5 h-3.5" /> Thêm ảnh
-              </button>
+              <div className="flex gap-2">
+                <button type="button" onClick={handleUrlUpload}
+                  className="flex items-center gap-1.5 text-xs font-bold text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg transition-colors border border-primary/20">
+                  <LinkIcon className="w-3.5 h-3.5" /> Dán Link
+                </button>
+                <button type="button" onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1.5 text-xs font-bold text-background bg-primary hover:bg-primary/90 px-3 py-1.5 rounded-lg transition-colors">
+                  <Upload className="w-3.5 h-3.5" /> Tải lên
+                </button>
+              </div>
             </div>
 
             {/* Drop zone */}
@@ -506,7 +676,6 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
                           img={img} index={i}
                           onRemove={removeImage}
                           onSetPrimary={setPrimaryImage}
-                          totalCount={images.length}
                         />
                         {/* Gắn màu cho ảnh biến thể */}
                         {img.url && !img.uploading && attrs.colors.length > 0 && (
@@ -553,12 +722,28 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
               </button>
             </div>
 
+            {/* Quick-create thuộc tính */}
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setQuickCreateType('color')}
+                className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground bg-muted/50 border border-border px-2.5 py-1 rounded-lg hover:bg-muted hover:text-foreground transition-colors">
+                <Plus className="w-3 h-3" /> Thêm màu
+              </button>
+              <button type="button" onClick={() => setQuickCreateType('size')}
+                className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground bg-muted/50 border border-border px-2.5 py-1 rounded-lg hover:bg-muted hover:text-foreground transition-colors">
+                <Plus className="w-3 h-3" /> Thêm size
+              </button>
+              <button type="button" onClick={() => setQuickCreateType('material')}
+                className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground bg-muted/50 border border-border px-2.5 py-1 rounded-lg hover:bg-muted hover:text-foreground transition-colors">
+                <Plus className="w-3 h-3" /> Thêm chất liệu
+              </button>
+            </div>
+
             <div className="overflow-x-auto rounded-lg border border-border">
               <table className="w-full text-left text-xs min-w-[780px]">
                 <thead className="bg-muted/60 border-b border-border">
                   <tr>
-                    {['Màu sắc', 'Kích cỡ', 'Chất liệu', 'Mã SKU (Bỏ trống = Tự tạo)', 'Giá (VNĐ) *', 'Tồn kho', ''].map(h => (
-                      <th key={h} className="px-3 py-2.5 font-bold text-muted-foreground">{h}</th>
+                    {['Màu sắc', 'Kích cỡ', 'Mô tả Size', 'Chất liệu', 'Mã SKU', 'Giá (VNĐ) *', 'Tồn kho', ''].map(h => (
+                      <th key={h} className="px-3 py-2.5 font-bold text-muted-foreground whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -586,6 +771,11 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
                         </select>
                       </td>
                       <td className="px-2 py-2">
+                        <input type="text" placeholder="VD: 50-60kg, 1m60" value={v.size_description || ''}
+                          onChange={e => setVariantField(idx, 'size_description', e.target.value)}
+                          className="w-full min-w-[120px] py-1.5 px-2 rounded border border-border bg-background outline-none focus:border-primary text-xs" />
+                      </td>
+                      <td className="px-2 py-2">
                         <select value={v.material_id}
                           onChange={e => setVariantField(idx, 'material_id', e.target.value)}
                           className="w-full py-1.5 px-2 rounded border border-border bg-background outline-none focus:border-primary text-xs">
@@ -598,7 +788,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
                       <td className="px-2 py-2">
                         <input type="text" placeholder="AUTO" value={v.sku}
                           onChange={e => setVariantField(idx, 'sku', e.target.value.toUpperCase())}
-                          className="w-full py-1.5 px-2 rounded border border-border bg-background outline-none focus:border-primary font-mono text-xs uppercase" />
+                          className="w-full min-w-[100px] py-1.5 px-2 rounded border border-border bg-background outline-none focus:border-primary font-mono text-xs uppercase" />
                       </td>
                       <td className="px-2 py-2">
                         <input type="number" required min="1" value={v.price}
@@ -642,7 +832,19 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
           {isEditMode ? 'Lưu thay đổi' : 'Tạo sản phẩm'}
         </button>
       </div>
-    </motion.div>
+      </motion.div>
+
+      {/* Modal Quick Create */}
+      <AnimatePresence>
+        {quickCreateType && (
+          <QuickCreateModal 
+            type={quickCreateType} 
+            onClose={() => setQuickCreateType(null)} 
+            onSuccess={handleQuickCreateSuccess} 
+          />
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 

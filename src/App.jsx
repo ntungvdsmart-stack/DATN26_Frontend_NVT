@@ -7,8 +7,12 @@ import Login from './pages/Login';
 import POS from './pages/POS';
 import ProductsList from './pages/ProductsList';
 import StoreHome from './pages/StoreHome';
+import StoreProducts from './pages/StoreProducts';
 import ProductDetail from './pages/ProductDetail';
 import Checkout from './pages/Checkout';
+import UserProfile from './pages/UserProfile';
+import StaffProfile from './pages/StaffProfile';
+import OrderTracking from './pages/OrderTracking';
 import { OrderManagement, CustomerManagement } from './pages/StaffPages';
 import Reports from './pages/Reports';
 import Support from './pages/Support';
@@ -16,8 +20,16 @@ import OnlineSales from './pages/OnlineSales';
 import Payments from './pages/Payments';
 import SystemConfig from './pages/SystemConfig';
 import AccountManagement from './pages/AccountManagement';
+import BranchManagement from './pages/BranchManagement';
+import CategoryBrandManagement from './pages/CategoryBrandManagement';
+import PromotionManagement from './pages/PromotionManagement';
+import ReturnManagement from './pages/ReturnManagement';
+import InventoryManagement from './pages/InventoryManagement';
+import FaqManagement from './pages/FaqManagement';
+import FAQ from './pages/FAQ';
 import { AnimatePresence } from 'framer-motion';
 import { useAuth } from './context/AuthContext';
+import { Toaster } from 'sonner';
 import { cn } from './lib/utils';
 
 // Placeholder for pages not yet built
@@ -41,11 +53,19 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
   return children;
 };
 
+const PublicUserRoute = ({ children }) => {
+  const { role } = useAuth();
+  if (role === 'admin') return <Navigate to="/dashboard" replace />;
+  if (role === 'staff') return <Navigate to="/pos" replace />;
+  return children;
+};
+
 function App() {
   const { role } = useAuth();
 
   return (
     <Router>
+      <Toaster position="top-right" richColors theme="system" />
       <AnimatePresence mode="wait">
         <Routes>
           <Route path="/" element={<Navigate to="/store" replace />} />
@@ -54,27 +74,34 @@ function App() {
           <Route path="/login" element={role === 'guest' ? <Login /> : <Navigate to={role === 'customer' ? '/store' : role === 'staff' ? '/pos' : '/dashboard'} replace />} />
 
           {/* Customer Storefront (Public & Customer) */}
-          <Route path="/store" element={<StorefrontLayout />}>
+          <Route path="/store" element={<PublicUserRoute><StorefrontLayout /></PublicUserRoute>}>
             <Route index element={<StoreHome />} />
-            <Route path="products" element={<ComingSoon title="Tất cả sản phẩm" />} />
+            <Route path="products" element={<StoreProducts />} />
             <Route path="products/:id" element={<ProductDetail />} />
             <Route path="checkout" element={<Checkout />} />
-            <Route path="categories" element={<ComingSoon title="Danh mục" />} />
-            <Route path="sale" element={<ComingSoon title="Khuyến mãi" />} />
+            <Route path="profile" element={<UserProfile />} />
+            <Route path="tracking" element={<OrderTracking />} />
+            <Route path="faq" element={<FAQ />} />
           </Route>
 
           {/* Admin & Staff (Dashboard / POS) */}
           <Route element={<ProtectedRoute allowedRoles={['admin', 'staff']}><MainLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<ProtectedRoute allowedRoles={['admin']}><Dashboard /></ProtectedRoute>} />
-            <Route path="/pos" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><POS /></ProtectedRoute>} />
-            <Route path="/products" element={<ProtectedRoute allowedRoles={['admin']}><ProductsList /></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><StaffProfile /></ProtectedRoute>} />
+            <Route path="/pos" element={<ProtectedRoute allowedRoles={['staff']}><POS /></ProtectedRoute>} />
+            <Route path="/products" element={<ProtectedRoute allowedRoles={['staff']}><ProductsList /></ProtectedRoute>} />
             <Route path="/orders" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><OrderManagement /></ProtectedRoute>} />
-            <Route path="/online" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><OnlineSales /></ProtectedRoute>} />
+            <Route path="/returns" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><ReturnManagement /></ProtectedRoute>} />
+            <Route path="/online" element={<ProtectedRoute allowedRoles={['staff']}><OnlineSales /></ProtectedRoute>} />
             <Route path="/payments" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><Payments /></ProtectedRoute>} />
             <Route path="/support" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><Support /></ProtectedRoute>} />
             <Route path="/customers" element={<ProtectedRoute allowedRoles={['admin', 'staff']}><CustomerManagement /></ProtectedRoute>} />
             <Route path="/admin" element={<ProtectedRoute allowedRoles={['admin']}><SystemConfig /></ProtectedRoute>} />
             <Route path="/admin/accounts" element={<ProtectedRoute allowedRoles={['admin']}><AccountManagement /></ProtectedRoute>} />
+            <Route path="/admin/branches" element={<ProtectedRoute allowedRoles={['admin']}><BranchManagement /></ProtectedRoute>} />
+            <Route path="/admin/categories" element={<ProtectedRoute allowedRoles={['admin']}><CategoryBrandManagement /></ProtectedRoute>} />
+            <Route path="/admin/promotions" element={<ProtectedRoute allowedRoles={['admin']}><PromotionManagement /></ProtectedRoute>} />
+            <Route path="/admin/faqs" element={<ProtectedRoute allowedRoles={['admin']}><FaqManagement /></ProtectedRoute>} />
             <Route path="/reports" element={<ProtectedRoute allowedRoles={['admin']}><Reports /></ProtectedRoute>} />
           </Route>
 

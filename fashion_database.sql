@@ -461,7 +461,7 @@ CREATE TABLE order_return_items (
 CREATE TABLE payments (
     payment_id       BIGINT AUTO_INCREMENT PRIMARY KEY,
     order_id         BIGINT NOT NULL,
-    payment_method   ENUM('vnpay','momo','cash','qr_pos','bank_transfer') NOT NULL,
+    payment_method   ENUM('vnpay','momo','cash','qr_pos','bank_transfer','stripe') NOT NULL,
     amount           DECIMAL(12,2) NOT NULL,
     transaction_code VARCHAR(100) NULL COMMENT 'Mã giao dịch trả về từ cổng thanh toán',
     payment_status   ENUM('pending','success','failed','refunded') NOT NULL DEFAULT 'pending',
@@ -642,6 +642,28 @@ LEFT JOIN order_promotions op ON pr.promotion_id = op.promotion_id
 GROUP BY pr.promotion_id, pr.promo_code, pr.promo_name, pr.max_usage_count;
 
 -- ============================================================================
+-- MODULE 10: HỖ TRỢ KHÁCH HÀNG (Support Chat)
+-- ============================================================================
+
+CREATE TABLE chat_sessions (
+    session_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NULL,
+    status ENUM('open', 'closed') DEFAULT 'open',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (customer_id) REFERENCES customers(customer_id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE chat_messages (
+    message_id INT AUTO_INCREMENT PRIMARY KEY,
+    session_id INT NOT NULL,
+    sender_type ENUM('customer', 'staff', 'bot') NOT NULL,
+    sender_id INT NULL,
+    content TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+-- ============================================================================
 -- DỮ LIỆU MẪU KHỞI TẠO (Seed Data)
 -- ============================================================================
 
@@ -656,3 +678,55 @@ INSERT INTO roles (role_name) VALUES
 INSERT INTO branches (branch_name, address, phone) VALUES
     ('Kho Tổng / Trung Tâm', 'Hà Nội', NULL),
     ('Chi nhánh 1 - HCM',    'TP. Hồ Chí Minh', NULL);
+
+-- ============================================================================
+-- MODULE 12: ĐÁNH GIÁ VÀ ĐỔI TRẢ HÀNG
+-- ============================================================================
+
+-- Bảng đánh giá sản phẩm (customer_reviews)
+CREATE TABLE IF NOT EXISTS `customer_reviews` (
+  `review_id` int NOT NULL AUTO_INCREMENT,
+  `customer_id` int NOT NULL,
+  `variant_id` int NOT NULL,
+  `order_id` int NOT NULL,
+  `rating` int NOT NULL CHECK (`rating` BETWEEN 1 AND 5),
+  `comment` text,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`review_id`),
+  KEY `fk_review_customer` (`customer_id`),
+  KEY `fk_review_variant` (`variant_id`),
+  KEY `fk_review_order` (`order_id`),
+  CONSTRAINT `fk_review_customer` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`customer_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_review_variant` FOREIGN KEY (`variant_id`) REFERENCES `product_variants` (`variant_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_review_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Bảng yêu cầu đổi/trả hàng (order_returns)
+CREATE TABLE IF NOT EXISTS `order_returns` (
+  `return_id` int NOT NULL AUTO_INCREMENT,
+  `order_id` int NOT NULL,
+  `return_type` enum('return', 'exchange') NOT NULL DEFAULT 'return',
+  `reason` text NOT NULL,
+  `status` enum('requested', 'approved', 'rejected', 'completed') NOT NULL DEFAULT 'requested',
+  `processed_by` int DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`return_id`),
+  KEY `fk_return_order` (`order_id`),
+  KEY `fk_return_admin` (`processed_by`),
+  CONSTRAINT `fk_return_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`order_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_return_admin` FOREIGN KEY (`processed_by`) REFERENCES `admin_accounts` (`account_id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+-- Bảng chi tiết yêu cầu đổi/trả hàng (order_return_items)
+CREATE TABLE IF NOT EXISTS `order_return_items` (
+  `return_item_id` int NOT NULL AUTO_INCREMENT,
+  `return_id` int NOT NULL,
+  `order_item_id` int NOT NULL,
+  `quantity` int NOT NULL,
+  PRIMARY KEY (`return_item_id`),
+  KEY `fk_retitem_return` (`return_id`),
+  KEY `fk_retitem_orderitem` (`order_item_id`),
+  CONSTRAINT `fk_retitem_return` FOREIGN KEY (`return_id`) REFERENCES `order_returns` (`return_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_retitem_orderitem` FOREIGN KEY (`order_item_id`) REFERENCES `order_items` (`order_item_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

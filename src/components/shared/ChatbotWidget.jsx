@@ -13,18 +13,48 @@ const ChatbotWidget = () => {
 
   const [chatType, setChatType] = useState('bot'); // 'bot' or 'agent'
 
-  const handleSend = (e) => {
+  const handleSend = async (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-    setMessages([...messages, { text: input, sender: 'user' }]);
+    const userMsg = input.trim();
+    
+    // Thêm tin nhắn của user vào UI ngay lập tức
+    setMessages(prev => [...prev, { text: userMsg, sender: 'user' }]);
     setInput('');
-    setTimeout(() => {
-      if (chatType === 'bot') {
-        setMessages(prev => [...prev, { text: 'Cảm ơn bạn! Nhân viên sẽ phản hồi trong giây lát.', sender: 'bot' }]);
-      } else {
-        setMessages(prev => [...prev, { text: 'Chào bạn, mình là nhân viên tư vấn. Mình có thể giúp gì cho bạn?', sender: 'bot' }]);
-      }
-    }, 1000);
+
+    if (chatType === 'agent') {
+        setTimeout(() => {
+            setMessages(prev => [...prev, { text: 'Chào bạn, hiện tại tất cả nhân viên đang bận. Bạn vui lòng để lại lời nhắn, chúng mình sẽ phản hồi sớm nhất!', sender: 'bot' }]);
+        }, 800);
+        return;
+    }
+
+    // Nếu là chat với Bot AI
+    // Thêm placeholder "đang gõ..."
+    setMessages(prev => [...prev, { text: '...', sender: 'bot', isTyping: true }]);
+
+    try {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/support/gemini-chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: userMsg })
+        });
+        
+        const data = await response.json();
+        
+        // Cập nhật lại tin nhắn cuối cùng (xóa isTyping)
+        setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { text: data.reply || 'Xin lỗi, tôi không thể trả lời lúc này.', sender: 'bot' };
+            return newMessages;
+        });
+    } catch (error) {
+        setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1] = { text: 'Lỗi kết nối tới AI. Vui lòng thử lại sau.', sender: 'bot' };
+            return newMessages;
+        });
+    }
   };
 
   const toggleMenu = () => {

@@ -2,45 +2,62 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X, Save, Shield, User, Loader2, AlertCircle } from 'lucide-react';
 import accountApi from '../../api/accountApi';
+import branchApi from '../../api/branchApi';
 
 const AccountModal = ({ account, onClose, onSuccess }) => {
   const isEdit = !!account;
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [branches, setBranches] = useState([]);
 
   // Form State
   const [formData, setFormData] = useState({
-    username: '',
     full_name: '',
     email: '',
     phone: '',
     password: '',
-    role_id: 2 // Mặc định là Staff
+    role_id: 2, // Mặc định là Staff
+    branch_id: ''
   });
+
+  useEffect(() => {
+    const fetchBranches = async () => {
+      try {
+        const res = await branchApi.getAll();
+        if (res.success) setBranches(res.data.filter(b => b.is_active === 1));
+      } catch (err) {
+        console.error('Lỗi tải danh sách chi nhánh', err);
+      }
+    };
+    fetchBranches();
+  }, []);
 
   useEffect(() => {
     if (account) {
       setFormData({
-        username: account.username || '',
         full_name: account.full_name || '',
         email: account.email || '',
         phone: account.phone || '',
         password: '', // Không tải password lên
-        role_id: account.role_id || 2
+        role_id: account.role_id || 2,
+        branch_id: account.branch_id || ''
       });
     }
   }, [account]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: name === 'role_id' ? parseInt(value) : value }));
+    setFormData(prev => ({ 
+      ...prev, 
+      [name]: (name === 'role_id' || name === 'branch_id') && value !== '' ? parseInt(value) : value 
+    }));
   };
 
   const validate = () => {
     if (!formData.full_name.trim()) return 'Vui lòng nhập họ và tên';
-    if (!isEdit && !formData.username.trim()) return 'Vui lòng nhập tên đăng nhập';
     if (!isEdit && !formData.email.trim()) return 'Vui lòng nhập email';
     if (!isEdit && (!formData.password || formData.password.length < 6)) return 'Mật khẩu phải từ 6 ký tự';
+    if (formData.role_id === 2 && !formData.branch_id) return 'Vui lòng chọn chi nhánh cho nhân viên';
     return null;
   };
 
@@ -58,7 +75,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
     try {
       let res;
       if (isEdit) {
-        // Cập nhật (Không gửi password, username, email để bảo vệ)
+        // Cập nhật (Không gửi password, email để bảo vệ)
         const updateData = {
           full_name: formData.full_name,
           phone: formData.phone,
@@ -146,6 +163,24 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
               </div>
             </div>
 
+            {/* Chi nhánh (Chỉ hiện khi là Staff) */}
+            {formData.role_id === 2 && (
+              <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Thuộc chi nhánh *</label>
+                <select 
+                  name="branch_id" 
+                  value={formData.branch_id} 
+                  onChange={handleChange}
+                  className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                >
+                  <option value="">-- Chọn chi nhánh --</option>
+                  {branches.map(b => (
+                    <option key={b.branch_id} value={b.branch_id}>{b.branch_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Họ và tên *</label>
@@ -166,15 +201,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
             </div>
 
             {/* Các trường không thể sửa khi đã tạo */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Username {isEdit ? '(Không thể sửa)' : '*'}</label>
-                <input 
-                  type="text" name="username" required={!isEdit} disabled={isEdit} value={formData.username} onChange={handleChange}
-                  className={`w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none transition-all ${isEdit ? 'opacity-50 cursor-not-allowed bg-muted/50' : 'focus:border-primary focus:ring-1 focus:ring-primary'}`}
-                  placeholder="Tên đăng nhập"
-                />
-              </div>
+            <div className="grid grid-cols-1 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Email {isEdit ? '(Không thể sửa)' : '*'}</label>
                 <input 

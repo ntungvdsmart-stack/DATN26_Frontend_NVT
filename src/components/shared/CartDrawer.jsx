@@ -63,7 +63,7 @@ const CartDrawer = () => {
                     key={item.id} 
                     className="flex gap-4 group"
                   >
-                    <div className="w-24 h-32 bg-muted overflow-hidden">
+                    <div className="w-24 h-32 bg-muted overflow-hidden shrink-0">
                       <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
                     </div>
                     
@@ -86,7 +86,7 @@ const CartDrawer = () => {
                           <span className="w-8 text-center text-sm font-medium">{item.qty}</span>
                           <button onClick={() => updateQuantity(item.id, 1)} className="p-2 hover:bg-muted transition-colors"><Plus size={14} /></button>
                         </div>
-                        <p className="font-semibold">{item.price.toLocaleString('vi-VN')}đ</p>
+                        <p className="font-semibold">{Number(item.price).toLocaleString('vi-VN')}đ</p>
                       </div>
                     </div>
                   </motion.div>
@@ -99,7 +99,7 @@ const CartDrawer = () => {
               <div className="p-6 border-t border-border bg-background">
                 <div className="flex justify-between mb-6 text-lg font-bold">
                   <span>Tổng cộng</span>
-                  <span>{totalPrice.toLocaleString('vi-VN')}đ</span>
+                  <span>{items.reduce((sum, item) => sum + (Number(item.price) * item.qty), 0).toLocaleString('vi-VN')}đ</span>
                 </div>
                 <p className="text-xs text-muted-foreground mb-6">Phí vận chuyển và thuế sẽ được tính khi thanh toán.</p>
                 <button 

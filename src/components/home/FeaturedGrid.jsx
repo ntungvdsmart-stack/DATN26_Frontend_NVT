@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useCartStore } from '../../store/cartStore';
 import { cn } from '../../lib/utils';
 import { Link, useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, SlidersHorizontal, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, SlidersHorizontal, Loader2, Heart } from 'lucide-react';
+import { useWishlistStore } from '../../store/wishlistStore';
 import productApi from '../../api/productApi';
 
 const PAGE_SIZE = 8;
@@ -28,15 +29,27 @@ const itemVariants = {
 const ProductCard = ({ product }) => {
   const navigate = useNavigate();
   const { addItem } = useCartStore();
+  const { toggleItem, isInWishlist } = useWishlistStore();
   const [hovered, setHovered] = useState(false);
   const [added, setAdded] = useState(false);
+  const isWishlisted = isInWishlist(product.id);
+
+  const handleToggleWishlist = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleItem({
+      product_id: product.id,
+      product_name: product.name,
+      base_price: product.price,
+      primary_image: product.image,
+      category_name: product.category
+    });
+  };
 
   const handleAdd = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    addItem(product);
-    setAdded(true);
-    setTimeout(() => setAdded(false), 1500);
+    navigate(`/store/products/${product.id}`);
   };
 
   return (
@@ -52,6 +65,7 @@ const ProductCard = ({ product }) => {
         <motion.img
           src={product.image}
           alt={product.name}
+          onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/400x500/f3f4f6/9ca3af?text=Lỗi+Ảnh'; }}
           animate={{ opacity: hovered && product.imageAlt ? 0 : 1 }}
           transition={{ duration: 0.4 }}
           className="absolute inset-0 w-full h-full object-cover"
@@ -60,6 +74,7 @@ const ProductCard = ({ product }) => {
           <motion.img
             src={product.imageAlt}
             alt={product.name + ' alt'}
+            onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/400x500/f3f4f6/9ca3af?text=Lỗi+Ảnh'; }}
             animate={{ opacity: hovered ? 1 : 0 }}
             transition={{ duration: 0.4 }}
             className="absolute inset-0 w-full h-full object-cover"
@@ -80,28 +95,37 @@ const ProductCard = ({ product }) => {
           </span>
         )}
 
+        {/* Wishlist Button */}
+        <button
+          onClick={handleToggleWishlist}
+          className={cn(
+            'absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition-all z-20',
+            isWishlisted ? 'bg-rose-500/10 text-rose-500' : 'bg-background/50 text-foreground hover:bg-background'
+          )}
+        >
+          <Heart size={16} className={cn(isWishlisted && 'fill-rose-500')} />
+        </button>
+
         {/* Add to cart slide-up */}
         <div className="absolute bottom-0 left-0 w-full translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-10">
           <button
             onClick={handleAdd}
             className={cn(
               'w-full py-3 text-xs font-bold uppercase tracking-widest transition-colors',
-              added
-                ? 'bg-emerald-600 text-white'
-                : 'bg-background/95 backdrop-blur-sm text-foreground hover:bg-foreground hover:text-background'
+              'bg-background/95 backdrop-blur-sm text-foreground hover:bg-foreground hover:text-background'
             )}
           >
-            {added ? '✓ Đã thêm' : 'Thêm vào giỏ'}
+            Xem Chi Tiết
           </button>
         </div>
       </div>
 
       {/* Info */}
       <div className="flex flex-col gap-1 px-0.5">
-        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{product.category_name || 'Thời trang'}</p>
-        <h3 className="font-semibold text-sm leading-snug line-clamp-2">{product.product_name}</h3>
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{product.category || 'Thời trang'}</p>
+        <h3 className="font-semibold text-sm leading-snug line-clamp-2">{product.name}</h3>
         <div className="flex items-baseline gap-2 mt-0.5">
-          <span className="font-bold text-sm">{Number(product.base_price).toLocaleString('vi-VN')}đ</span>
+          <span className="font-bold text-sm">{Number(product.price).toLocaleString('vi-VN')}đ</span>
         </div>
       </div>
     </motion.div>
@@ -170,9 +194,9 @@ const FeaturedGrid = ({ limit }) => {
               </button>
             )}
             {limit && (
-              <button className="text-xs font-bold tracking-widest uppercase border-b-2 border-foreground pb-0.5 hover:text-muted-foreground hover:border-muted-foreground transition-all">
+              <Link to="/store/products" className="text-xs font-bold tracking-widest uppercase border-b-2 border-foreground pb-0.5 hover:text-muted-foreground hover:border-muted-foreground transition-all">
                 Xem tất cả →
-              </button>
+              </Link>
             )}
           </div>
         </div>

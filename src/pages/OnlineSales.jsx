@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { dummyOrders } from '../utils/dummyData';
+import React, { useState, useEffect } from 'react';
+import orderApi from '../api/orderApi';
 import { Search, Eye, Filter, ArrowRight, Truck, Package, CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
@@ -46,20 +46,47 @@ const statusColors = {
 };
 
 const OnlineSales = () => {
+  const [onlineOrders, setOnlineOrders] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('Tất cả');
 
-  const tabs = ['Tất cả', 'Chờ xác nhận', 'Đang xử lý', 'Đang giao', 'Hoàn tất'];
+  useEffect(() => {
+    fetchOrders();
+  }, []);
 
-  const onlineOrders = dummyOrders.filter(o => o.channel === 'Online');
+  const fetchOrders = async () => {
+    setIsLoading(true);
+    try {
+      const res = await orderApi.getAllOrders();
+      if (res && res.success) {
+        setOnlineOrders(res.data.filter(o => o.channel?.toLowerCase() === 'online'));
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    setIsLoading(false);
+  };
+
+  const tabs = ['Tất cả', 'pending', 'processing', 'shipping', 'completed'];
+  const tabLabels = {
+    'Tất cả': 'Tất cả',
+    'pending': 'Chờ xác nhận',
+    'processing': 'Đang xử lý',
+    'shipping': 'Đang giao',
+    'completed': 'Hoàn tất'
+  };
+  const STATUS_LABELS = {
+    pending: 'Chờ xác nhận', confirmed: 'Đã xác nhận', processing: 'Đang xử lý',
+    shipping: 'Đang giao', completed: 'Đã giao', cancelled: 'Đã huỷ', returned: 'Trả hàng'
+  };
 
   const filtered = onlineOrders.filter(o => {
-    const matchSearch = o.id.toLowerCase().includes(search.toLowerCase()) || o.customer.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = o.order_code?.toLowerCase().includes(search.toLowerCase()) || o.customer_name?.toLowerCase().includes(search.toLowerCase());
     const matchFilter = 
       filter === 'Tất cả' ? true :
-      filter === 'Hoàn tất' ? o.status === 'Đã giao' :
-      o.status === filter;
+      o.order_status === filter;
     return matchSearch && matchFilter;
   });
 
@@ -87,28 +114,28 @@ const OnlineSales = () => {
             <Package size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Chờ xác nhận</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.status === 'Chờ xác nhận').length}</p>
+          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'pending').length}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-3 mb-2 text-amber-500">
             <CreditCard size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Đang xử lý</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.status === 'Đang xử lý').length}</p>
+          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'processing').length}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-3 mb-2 text-blue-500">
             <Truck size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Đang giao</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.status === 'Đang giao').length}</p>
+          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'shipping').length}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-3 mb-2 text-emerald-500">
             <ArrowRight size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Hoàn tất</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.status === 'Đã giao').length}</p>
+          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'completed').length}</p>
         </div>
       </div>
 
@@ -125,7 +152,7 @@ const OnlineSales = () => {
                   filter === t ? 'bg-background shadow-sm' : 'hover:bg-background/50 text-muted-foreground'
                 )}
               >
-                {t}
+                {tabLabels[t]}
               </button>
             ))}
           </div>
@@ -156,9 +183,11 @@ const OnlineSales = () => {
             </thead>
             <tbody className="divide-y divide-border/60">
               <AnimatePresence>
-                {paginated.map((order, idx) => (
+                {isLoading ? (
+                  <tr><td colSpan="5" className="text-center py-10 text-muted-foreground">Đang tải...</td></tr>
+                ) : paginated.map((order, idx) => (
                   <motion.tr
-                    key={order.id}
+                    key={order.order_id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0 }}
@@ -166,20 +195,22 @@ const OnlineSales = () => {
                     className="hover:bg-muted/30 transition-colors group"
                   >
                     <td className="px-5 py-4">
-                      <p className="font-mono text-sm font-bold text-foreground">{order.id}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{order.date} · {order.items} SP</p>
+                      <p className="font-mono text-sm font-bold text-foreground">{order.order_code}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{new Date(order.created_at).toLocaleDateString('vi-VN')}</p>
                     </td>
                     <td className="px-5 py-4">
-                      <p className="font-semibold">{order.customer}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 max-w-[200px] truncate">{order.address}</p>
+                      <p className="font-semibold">{order.customer_name || 'Khách vãng lai'}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 max-w-[200px] truncate">{order.shipping_address_snapshot || 'Nhận tại cửa hàng'}</p>
                     </td>
                     <td className="px-5 py-4">
-                      <p className="font-bold text-primary">{order.total.toLocaleString('vi-VN')}đ</p>
-                      <p className="text-[10px] uppercase font-bold text-emerald-500 mt-0.5">Đã thanh toán (VNPay)</p>
+                      <p className="font-bold text-primary">{Number(order.total_amount).toLocaleString('vi-VN')}đ</p>
+                      <p className={cn("text-[10px] uppercase font-bold mt-0.5", order.payment_status === 'success' ? 'text-emerald-500' : 'text-amber-500')}>
+                        {order.payment_method || 'Tiền mặt'} ({order.payment_status === 'success' ? 'Đã thanh toán' : 'Chưa thanh toán'})
+                      </p>
                     </td>
                     <td className="px-5 py-4">
-                      <span className={cn('px-2.5 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider', statusColors[order.status])}>
-                        {order.status}
+                      <span className={cn('px-2.5 py-1 rounded-full text-[10px] uppercase font-bold tracking-wider', statusColors[STATUS_LABELS[order.order_status]] || 'bg-muted text-muted-foreground')}>
+                        {STATUS_LABELS[order.order_status] || order.order_status}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-right">

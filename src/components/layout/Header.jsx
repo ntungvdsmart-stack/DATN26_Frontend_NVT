@@ -1,8 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Bell, Search, Menu, Sun, Moon, LogOut } from 'lucide-react';
+import { Search, Menu, Sun, Moon, LogOut } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import NotificationBell from '../shared/NotificationBell';
 
 const Header = () => {
   const { theme, toggleTheme } = useTheme();
@@ -38,10 +39,7 @@ const Header = () => {
           {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
         </button>
 
-        <button className="relative w-10 h-10 rounded-full border border-border flex items-center justify-center text-foreground hover:bg-muted transition-colors">
-          <Bell size={18} />
-          <span className="absolute top-2 right-2 w-2 h-2 bg-destructive rounded-full shadow-[0_0_8px_var(--color-destructive)]"></span>
-        </button>
+        <NotificationBell role="admin" />
 
         <button 
           onClick={logout}

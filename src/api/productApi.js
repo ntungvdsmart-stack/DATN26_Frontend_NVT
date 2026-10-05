@@ -16,16 +16,41 @@ const productApi = {
   // onProgress: callback(percent) để hiển thị progress bar
   uploadImages: (files, onProgress) => {
     const formData = new FormData();
-    Array.from(files).forEach(file => formData.append('images', file));
+    for (let i = 0; i < files.length; i++) {
+      formData.append('images', files[i]);
+    }
     return axiosClient.post('/products/upload-images', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (e) => {
-        if (onProgress && e.total) {
-          onProgress(Math.round((e.loaded * 100) / e.total));
+      onUploadProgress: (progressEvent) => {
+        if (onProgress) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
         }
-      },
+      }
     });
   },
+
+  // Upload ảnh từ URL thẳng lên Cloudinary
+  uploadImageUrl: (url) => axiosClient.post('/products/upload-image-url', { url }),
+
+  getAttributes: () => axiosClient.get('/products/attributes/all'),
+  createCategory: (data) => axiosClient.post('/products/attributes/categories', data),
+  updateCategory: (id, data) => axiosClient.put(`/products/attributes/categories/${id}`, data),
+  deleteCategory: (id) => axiosClient.delete(`/products/attributes/categories/${id}`),
+  createBrand: (data) => axiosClient.post('/products/attributes/brands', data),
+  updateBrand: (id, data) => axiosClient.put(`/products/attributes/brands/${id}`, data),
+  deleteBrand: (id) => axiosClient.delete(`/products/attributes/brands/${id}`),
+
+  createSize: (data) => axiosClient.post('/products/attributes/sizes', data),
+  updateSize: (id, data) => axiosClient.put(`/products/attributes/sizes/${id}`, data),
+  deleteSize: (id) => axiosClient.delete(`/products/attributes/sizes/${id}`),
+
+  createColor: (data) => axiosClient.post('/products/attributes/colors', data),
+  updateColor: (id, data) => axiosClient.put(`/products/attributes/colors/${id}`, data),
+  deleteColor: (id) => axiosClient.delete(`/products/attributes/colors/${id}`),
+
+  createMaterial: (data) => axiosClient.post('/products/attributes/materials', data),
+  updateMaterial: (id, data) => axiosClient.put(`/products/attributes/materials/${id}`, data),
+  deleteMaterial: (id) => axiosClient.delete(`/products/attributes/materials/${id}`),
 
   // ── CRUD ──────────────────────────────────────────────────────
   // payload = { product: {...}, variants: [...], images: [...] }

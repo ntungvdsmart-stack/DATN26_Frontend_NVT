@@ -19,13 +19,9 @@ export const useCartStore = create(
       },
       removeItem: (id) => set({ items: get().items.filter(item => item.id !== id) }),
       updateQuantity: (id, delta) => set({
-        items: get().items.map(item => {
-          if (item.id === id) {
-            const newQty = item.qty + delta;
-            return newQty > 0 ? { ...item, qty: newQty } : item;
-          }
-          return item;
-        })
+        items: get().items
+          .map(item => item.id === id ? { ...item, qty: item.qty + delta } : item)
+          .filter(item => item.qty > 0) // Tự xóa nếu qty giảm về 0
       }),
       clearCart: () => set({ items: [] }),
       get totalItems() {

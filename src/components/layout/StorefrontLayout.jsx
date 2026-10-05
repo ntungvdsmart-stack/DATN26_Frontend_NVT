@@ -2,7 +2,9 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar';
 import CartDrawer from '../shared/CartDrawer';
+import WishlistDrawer from '../shared/WishlistDrawer';
 import ChatbotWidget from '../shared/ChatbotWidget';
+import ScrollToTop from '../shared/ScrollToTop';
 import { ArrowRight, Globe, Smartphone, Mail, MessageCircle } from 'lucide-react';
 
 const StorefrontLayout = () => {
@@ -15,6 +17,7 @@ const StorefrontLayout = () => {
       
       <Navbar />
       <CartDrawer />
+      <WishlistDrawer />
       
       <main className="flex-1">
         <Outlet />
@@ -91,6 +94,7 @@ const StorefrontLayout = () => {
       </footer>
 
       <ChatbotWidget />
+      <ScrollToTop />
     </div>
   );
 };

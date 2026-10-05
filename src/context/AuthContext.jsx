@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import authApi from '../api/authApi';
+import { useWishlistStore } from '../store/wishlistStore';
 
 const AuthContext = createContext();
 
@@ -8,16 +9,36 @@ export const AuthProvider = ({ children }) => {
   const [role, setRole] = useState('guest'); 
   const [isLoading, setIsLoading] = useState(true);
 
+  // Kiểm tra token hết hạn
+  const isTokenExpired = (token) => {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.exp * 1000 < Date.now();
+    } catch {
+      return true; // Token mã hoá không hợp lệ → coi như hết hạn
+    }
+  };
+
   // Khởi tạo từ LocalStorage khi mount
   useEffect(() => {
     const token = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
 
     if (token && storedUser) {
+      // Kiểm tra token có hết hạn không trước khi dùng
+      if (isTokenExpired(token)) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        setIsLoading(false);
+        return;
+      }
       try {
         const parsedUser = JSON.parse(storedUser);
         setUser(parsedUser);
         setRole(parsedUser.role || 'customer');
+        if (parsedUser.role === 'customer') {
+          useWishlistStore.getState().fetchWishlist();
+        }
       } catch (err) {
         console.error('Lỗi phân tích dữ liệu người dùng đã lưu:', err);
         localStorage.removeItem('token');
@@ -28,7 +49,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   // Đăng nhập thống nhất — Backend tự phân biệt role
-  // identifier = email hoặc username (staff có thể dùng cả 2)
+  // identifier = email
   const login = async (identifier, password) => {
     try {
       const response = await authApi.login({ identifier, password });
@@ -37,7 +58,10 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('token', token);
         localStorage.setItem('user', JSON.stringify(userData));
         setUser(userData);
-        setRole(userData.role);
+        setRole(userData.role || 'customer');
+        if (userData.role === 'customer') {
+          useWishlistStore.getState().fetchWishlist();
+        }
         return { success: true, role: userData.role };
       }
       return { success: false, message: response?.message || 'Đăng nhập thất bại' };
@@ -65,6 +89,12 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('user');
     setUser(null);
     setRole('guest');
+    import('sonner').then(({ toast }) => {
+      toast.success('Đã đăng xuất thành công!');
+    });
+    setTimeout(() => {
+      window.location.href = '/login';
+    }, 800);
   };
 
   return (
