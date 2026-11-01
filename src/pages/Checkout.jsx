@@ -1,3 +1,5 @@
+import PaymentMethodIcon from '../components/shared/PaymentMethodIcon';
+import ProductImage from '../components/shared/ProductImage';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useCartStore } from '../store/cartStore';
@@ -6,7 +8,9 @@ import orderApi from '../api/orderApi';
 import configApi from '../api/configApi';
 import promotionApi from '../api/promotionApi';
 import addressApi from '../api/addressApi';
-import { CheckCircle2, Loader2, CreditCard, Banknote, Tag, X, MapPin } from 'lucide-react';
+import axiosClient from '../api/axiosClient';
+import { useOrderQuote } from '../lib/useOrderQuote';
+import { CheckCircle2, Loader2, Tag, X } from 'lucide-react';
 import { toast } from 'sonner';
 import VietmapAutocomplete from '../components/common/VietmapAutocomplete';
 
@@ -29,6 +33,10 @@ const Checkout = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [paymentMethods, setPaymentMethods] = useState({ vnpay: false, momo: false, stripe: false });
+  useEffect(() => {
+    axiosClient.get('/payments/methods').then(result => setPaymentMethods(result.data)).catch(() => {});
+  }, []);
 
   // Address State
   const [savedAddresses, setSavedAddresses] = useState([]);
@@ -39,6 +47,7 @@ const Checkout = () => {
   const [appliedPromo, setAppliedPromo] = useState(null); // { id, code, amount, minOrder }
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoMsg, setPromoMsg] = useState({ type: '', text: '' });
+  const { quote, loading: quoteLoading, error: quoteError } = useOrderQuote({ items: items.map(item => ({ variant_id: item.id, quantity: item.qty })), channel: 'online', promotionId: appliedPromo?.id, enabled: Boolean(user) });
 
   const [config, setConfig] = useState({ fee: 30000, threshold: 500000 });
 
@@ -46,8 +55,8 @@ const Checkout = () => {
     configApi.getSettings().then(res => {
       if (res?.success) {
         setConfig({
-          fee: Number(res.data.shipping_fee) || 30000,
-          threshold: Number(res.data.free_shipping_threshold) || 500000
+          fee: res.data.shipping_fee != null && res.data.shipping_fee !== '' && Number.isFinite(Number(res.data.shipping_fee)) && Number(res.data.shipping_fee) >= 0 ? Number(res.data.shipping_fee) : 30000,
+          threshold: res.data.free_shipping_threshold != null && res.data.free_shipping_threshold !== '' && Number.isFinite(Number(res.data.free_shipping_threshold)) && Number(res.data.free_shipping_threshold) >= 0 ? Number(res.data.free_shipping_threshold) : 500000
         });
       }
     }).catch(() => {});
@@ -68,7 +77,7 @@ const Checkout = () => {
             ...prev,
             fullName: defaultAddr.recipient_name,
             phone: defaultAddr.recipient_phone,
-            address: `${defaultAddr.full_address}, ${defaultAddr.ward}, ${defaultAddr.district}, ${defaultAddr.city}`,
+            address: [defaultAddr.full_address, defaultAddr.ward, defaultAddr.district, defaultAddr.city].filter(Boolean).join(', '),
             latitude: defaultAddr.latitude,
             longitude: defaultAddr.longitude
           }));
@@ -88,7 +97,7 @@ const Checkout = () => {
           ...prev,
           fullName: addr.recipient_name,
           phone: addr.recipient_phone,
-          address: `${addr.full_address}, ${addr.ward}, ${addr.district}, ${addr.city}`,
+          address: [addr.full_address, addr.ward, addr.district, addr.city].filter(Boolean).join(', '),
           latitude: addr.latitude,
           longitude: addr.longitude
         }));
@@ -96,12 +105,13 @@ const Checkout = () => {
     }
   };
 
-  const shippingFee = totalPrice >= config.threshold ? 0 : config.fee;
+  const shippingFee = quote?.shipping_fee ?? (totalPrice >= config.threshold ? 0 : config.fee);
   const discount = appliedPromo ? appliedPromo.amount : 0;
-  const finalTotal = Math.max(0, totalPrice + shippingFee - discount);
+  const finalTotal = quote?.total_amount ?? Math.max(0, totalPrice + shippingFee - discount);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'paymentMethod' && (['momo', 'vnpay'].includes(value) || (value === 'stripe' && !paymentMethods.stripe))) return;
     setFormData(p => ({ ...p, [name]: value }));
   };
 
@@ -155,17 +165,36 @@ const Checkout = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return setError('Vui lòng điền đầy đủ thông tin giao hàng');
     }
+    const fullNameTrimmed = (formData.fullName || '').trim();
+    const phoneClean = (formData.phone || '').replace(/[\s.]/g, '');
+    const addressTrimmed = (formData.address || '').trim();
 
+    if (fullNameTrimmed.length < 2) {
+      toast.error('Họ tên người nhận phải có ít nhất 2 ký tự');
+      return setError('Họ tên người nhận phải có ít nhất 2 ký tự');
+    }
+    if (!/^(0|\+84)\d{9,10}$/.test(phoneClean)) {
+      toast.error('Số điện thoại không hợp lệ (10 chữ số, VD: 0912345678)');
+      return setError('Số điện thoại không hợp lệ');
+    }
+    if (addressTrimmed.length < 5) {
+      toast.error('Địa chỉ nhận hàng quá ngắn');
+      return setError('Địa chỉ nhận hàng quá ngắn');
+    }
+
+    if (!['cash', 'stripe'].includes(formData.paymentMethod) || (formData.paymentMethod === 'stripe' && !paymentMethods.stripe)) {
+      return setError('Phương thức thanh toán chưa khả dụng. Vui lòng chọn phương thức khác.');
+    }
     setIsLoading(true);
     setError('');
 
     try {
       const payload = {
         customer: {
-          fullName: formData.fullName,
-          phone: formData.phone
+          fullName: fullNameTrimmed,
+          phone: phoneClean
         },
-        shipping_address: formData.address,
+        shipping_address: addressTrimmed,
         shipping_latitude: formData.latitude,
         shipping_longitude: formData.longitude,
         payment_method: formData.paymentMethod,
@@ -321,9 +350,9 @@ const Checkout = () => {
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Địa chỉ nhận hàng chi tiết *</label>
                     <div className={selectedAddressId !== 'manual' ? 'opacity-50 pointer-events-none' : ''}>
-                      <VietmapAutocomplete 
+                      <VietmapAutocomplete required
                         value={formData.address}
-                        onChange={(val, lat, lng) => setFormData(p => ({ ...p, address: val, latitude: lat || p.latitude, longitude: lng || p.longitude }))}
+                        onChange={(val, lat, lng) => setFormData(p => ({ ...p, address: val, latitude: lat ?? null, longitude: lng ?? null }))}
                         placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố"
                       />
                     </div>
@@ -340,41 +369,41 @@ const Checkout = () => {
                 <div className="space-y-4">
                   <h2 className="text-lg font-bold uppercase tracking-wider border-b border-border pb-2">Phương thức thanh toán</h2>
                   <div className="space-y-3">
-                    <label className={`flex items-center gap-4 p-4 border cursor-pointer transition-all ${formData.paymentMethod === 'cash' ? 'border-foreground bg-muted' : 'border-border hover:border-foreground/50'}`}>
+                    <label className={`flex items-center gap-3 sm:gap-4 p-4 rounded-xl border cursor-pointer transition-all ${formData.paymentMethod === 'cash' ? 'border-foreground bg-muted' : 'border-border hover:border-foreground/50'}`}>
                       <input type="radio" name="paymentMethod" value="cash" checked={formData.paymentMethod === 'cash'} onChange={handleChange} className="w-4 h-4 accent-foreground" />
-                      <Banknote className="text-muted-foreground" />
+                      <PaymentMethodIcon method="cash" />
                       <div className="flex-1">
                         <p className="font-bold">Thanh toán khi nhận hàng (COD)</p>
                         <p className="text-xs text-muted-foreground">Thanh toán bằng tiền mặt khi giao hàng.</p>
                       </div>
                     </label>
 
-                    <label className={`flex items-center gap-4 p-4 border cursor-pointer transition-all ${formData.paymentMethod === 'stripe' ? 'border-foreground bg-muted' : 'border-border hover:border-foreground/50'}`}>
-                      <input type="radio" name="paymentMethod" value="stripe" checked={formData.paymentMethod === 'stripe'} onChange={handleChange} className="w-4 h-4 accent-foreground" />
-                      <CreditCard className="text-muted-foreground" />
+                    <label className={`flex items-center gap-3 sm:gap-4 p-4 rounded-xl border cursor-pointer transition-all ${formData.paymentMethod === 'stripe' ? 'border-foreground bg-muted' : 'border-border hover:border-foreground/50'}`}>
+                      <input type="radio" name="paymentMethod" value="stripe" checked={formData.paymentMethod === 'stripe'} onChange={handleChange} disabled={!paymentMethods.stripe} className="w-4 h-4 accent-foreground" />
+                      <PaymentMethodIcon method="stripe" />
                       <div className="flex-1">
                         <p className="font-bold">Thanh toán qua Stripe</p>
                         <p className="text-xs text-muted-foreground">Hỗ trợ thẻ Visa, MasterCard, Amex quốc tế.</p>
                       </div>
                     </label>
 
-                    <label className={`flex items-center gap-4 p-4 border cursor-pointer transition-all ${formData.paymentMethod === 'vnpay' ? 'border-foreground bg-muted' : 'border-border hover:border-foreground/50'}`}>
-                      <input type="radio" name="paymentMethod" value="vnpay" checked={formData.paymentMethod === 'vnpay'} onChange={handleChange} className="w-4 h-4 accent-foreground" disabled />
-                      <div className="flex-1 opacity-50">
-                        <p className="font-bold">Thanh toán qua VNPay (Đang bảo trì)</p>
-                        <p className="text-xs text-muted-foreground">Hỗ trợ thẻ ATM nội địa.</p>
-                      </div>
-                    </label>
+                    {['vnpay', 'momo'].map(method => <label key={method} aria-disabled="true" className="payment-method-disabled flex items-center gap-3 sm:gap-4 p-4 rounded-xl border border-border bg-muted/30 cursor-not-allowed select-none">
+                      <input type="radio" name="paymentMethod" value={method} checked={false} disabled className="w-4 h-4 shrink-0" />
+                      <PaymentMethodIcon method={method} />
+                      <div className="min-w-0 flex-1"><p className="font-semibold text-sm sm:text-base">{method === 'vnpay' ? 'Thanh toán qua VNPAY' : 'Ví MoMo'}</p><p className="text-xs text-muted-foreground mt-1">{method === 'vnpay' ? 'Hỗ trợ thẻ ATM nội địa.' : 'Thanh toán qua ứng dụng MoMo.'}</p><span className="inline-block mt-2 rounded-md border border-border px-2 py-0.5 text-[10px] font-medium">Chưa khả dụng</span></div>
+                    </label>)}
                   </div>
                 </div>
 
                 <button 
                   type="submit" 
-                  disabled={isLoading || formData.paymentMethod === 'vnpay'}
+                  disabled={isLoading || quoteLoading || Boolean(quoteError)}
                   className="w-full bg-foreground text-background py-5 font-black uppercase tracking-widest hover:bg-foreground/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2"
                 >
                   {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Hoàn tất đặt hàng'}
                 </button>
+                {quoteLoading && <p role="status" className="text-sm">Đang tính giá hiện tại...</p>}
+                {quoteError && <p role="alert" className="text-sm text-destructive">{quoteError}</p>}
               </form>
             </div>
 
@@ -387,7 +416,7 @@ const Checkout = () => {
                   {items.map(item => (
                     <div key={item.id} className="flex gap-4">
                       <div className="w-16 h-20 bg-background border border-border shrink-0">
-                        <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                        <ProductImage src={item.image} alt={item.name} className="w-full h-full object-cover" />
                       </div>
                       <div className="flex-1 text-sm">
                         <p className="font-bold line-clamp-2">{item.name}</p>
@@ -449,7 +478,7 @@ const Checkout = () => {
                 <div className="space-y-3 pt-6 border-t border-border/50 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Tạm tính</span>
-                    <span className="font-bold">{totalPrice.toLocaleString('vi-VN')}đ</span>
+                    <span className="font-bold">{(quote?.subtotal_amount ?? totalPrice).toLocaleString('vi-VN')}đ</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Phí vận chuyển</span>
@@ -463,10 +492,11 @@ const Checkout = () => {
                   )}
                 </div>
                 
+                {Number(quote?.loyalty_discount) > 0 && <div className="flex justify-between text-emerald-600 mt-3"><span>Ưu đãi thành viên</span><span>-{quote.loyalty_discount.toLocaleString('vi-VN')}đ</span></div>}
                 <div className="flex justify-between items-end mt-6 pt-6 border-t border-border">
                   <span className="font-bold uppercase tracking-wider">Tổng cộng</span>
                   <span className="text-2xl font-black">
-                    {Math.max(0, totalPrice + shippingFee - (appliedPromo ? appliedPromo.amount : 0)).toLocaleString('vi-VN')}đ
+                    {finalTotal.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
               </div>

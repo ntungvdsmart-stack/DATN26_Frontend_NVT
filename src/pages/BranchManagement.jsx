@@ -1,3 +1,7 @@
+import TableHeading from '../components/shared/TableHeading';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import ModalLayer from '../components/shared/ModalLayer';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Store, Plus, Edit2, Lock, Unlock, Loader2, MapPin, Phone } from 'lucide-react';
@@ -15,7 +19,7 @@ const BranchManagement = () => {
   const [formData, setFormData] = useState({
     branch_name: '',
     address: '',
-    phone: ''
+    phone: '', latitude: null, longitude: null
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -65,11 +69,11 @@ const BranchManagement = () => {
       setFormData({
         branch_name: branch.branch_name || '',
         address: branch.address || '',
-        phone: branch.phone || ''
+        phone: branch.phone || '', latitude: branch.latitude ?? null, longitude: branch.longitude ?? null
       });
     } else {
       setEditBranch(null);
-      setFormData({ branch_name: '', address: '', phone: '' });
+      setFormData({ branch_name: '', address: '', phone: '', latitude: null, longitude: null });
     }
     setIsModalOpen(true);
   };
@@ -81,8 +85,27 @@ const BranchManagement = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!formData.branch_name.trim()) {
-      toast.error('Tên chi nhánh là bắt buộc');
+    if (isSaving) return;
+    const trimmedName = formData.branch_name.trim();
+    if (!trimmedName || trimmedName.length < 2) {
+      toast.error('Tên chi nhánh là bắt buộc (tối thiểu 2 ký tự)');
+      return;
+    }
+    if (trimmedName.length > 150) {
+      toast.error('Tên chi nhánh không được vượt quá 150 ký tự');
+      return;
+    }
+    const cleanPhone = (formData.phone || '').trim().replace(/[\s.]/g, '');
+    if (cleanPhone && !/^(0|\+84)\d{9,10}$/.test(cleanPhone)) {
+      toast.error('Số điện thoại không hợp lệ (10 số, VD: 0912345678)');
+      return;
+    }
+    if (formData.latitude != null && formData.latitude !== '' && (isNaN(Number(formData.latitude)) || Math.abs(Number(formData.latitude)) > 90)) {
+      toast.error('Vĩ độ (latitude) phải từ -90 đến 90');
+      return;
+    }
+    if (formData.longitude != null && formData.longitude !== '' && (isNaN(Number(formData.longitude)) || Math.abs(Number(formData.longitude)) > 180)) {
+      toast.error('Kinh độ (longitude) phải từ -180 đến 180');
       return;
     }
 
@@ -108,12 +131,14 @@ const BranchManagement = () => {
     setIsSaving(false);
   };
 
+  const listPage = useListPagination(branches, '');
+
   return (
-    <div className="p-8 space-y-8 min-h-screen bg-background/50">
+    <div className="p-1 sm:p-4 lg:p-6 space-y-5 sm:space-y-8 min-h-screen bg-background/50">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">
             <Store className="w-8 h-8 text-primary" />
             Quản lý Chi nhánh
           </h1>
@@ -130,8 +155,9 @@ const BranchManagement = () => {
 
       {/* Bảng dữ liệu */}
       <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <TableHeading title={"Chi nh\u00e1nh c\u1eeda h\u00e0ng"} count={branches.length} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table table-with-actions w-full text-left border-collapse">
             <thead>
               <tr className="bg-muted/50 border-b border-border/50">
                 <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">ID</th>
@@ -156,7 +182,7 @@ const BranchManagement = () => {
                   </td>
                 </tr>
               ) : (
-                branches.map((b) => (
+                listPage.items.map((b) => (
                   <tr key={b.branch_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors group">
                     <td className="p-4 font-mono text-sm text-muted-foreground">#{b.branch_id}</td>
                     <td className="p-4">
@@ -221,12 +247,13 @@ const BranchManagement = () => {
             </tbody>
           </table>
         </div>
-      </div>
+        {!isLoading && <div className="admin-table-footer"><Pagination {...listPage.paginationProps} /></div>}
+      </div> 
 
       {/* Modal Thêm/Sửa */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalLayer onClose={handleCloseModal} label="Chi nhánh"><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={handleCloseModal}
@@ -248,7 +275,7 @@ const BranchManagement = () => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Tên chi nhánh *</label>
                   <input 
-                    type="text" required value={formData.branch_name} onChange={(e) => setFormData({...formData, branch_name: e.target.value})}
+                    type="text" required minLength={2} maxLength={150} value={formData.branch_name} onChange={(e) => setFormData({...formData, branch_name: e.target.value})}
                     className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                     placeholder="VD: Chi nhánh 2 - Hà Nội"
                   />
@@ -257,7 +284,7 @@ const BranchManagement = () => {
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Địa chỉ</label>
                   <VietmapAutocomplete 
                     value={formData.address}
-                    onChange={(val) => setFormData({...formData, address: val})}
+                      onChange={(val, lat, lng) => setFormData(previous => ({...previous, address: val, latitude: lat ?? null, longitude: lng ?? null}))}
                     placeholder="Số nhà, Đường, Quận, Thành phố..."
                     className="bg-muted/50 focus:bg-background"
                   />
@@ -265,7 +292,7 @@ const BranchManagement = () => {
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Số điện thoại</label>
                   <input 
-                    type="tel" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    type="tel" maxLength={20} pattern="(0[0-9]{9}|[+]84[0-9]{9})" value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})}
                     className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                     placeholder="Hotline chi nhánh"
                   />
@@ -282,7 +309,7 @@ const BranchManagement = () => {
                 </div>
               </form>
             </motion.div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
     </div>

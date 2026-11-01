@@ -1,6 +1,6 @@
+import ProductImage from '../shared/ProductImage';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useCartStore } from '../../store/cartStore';
 import { cn } from '../../lib/utils';
 import { Link, useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, SlidersHorizontal, Loader2, Heart } from 'lucide-react';
@@ -28,10 +28,8 @@ const itemVariants = {
 
 const ProductCard = ({ product }) => {
   const navigate = useNavigate();
-  const { addItem } = useCartStore();
   const { toggleItem, isInWishlist } = useWishlistStore();
   const [hovered, setHovered] = useState(false);
-  const [added, setAdded] = useState(false);
   const isWishlisted = isInWishlist(product.id);
 
   const handleToggleWishlist = (e) => {
@@ -62,19 +60,20 @@ const ProductCard = ({ product }) => {
     >
       {/* Image 3:4 */}
       <div className="relative w-full aspect-[3/4] bg-muted overflow-hidden mb-3">
-        <motion.img
+        <ProductImage animated
+          loading="lazy"
           src={product.image}
           alt={product.name}
-          onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/400x500/f3f4f6/9ca3af?text=Lỗi+Ảnh'; }}
+          
           animate={{ opacity: hovered && product.imageAlt ? 0 : 1 }}
           transition={{ duration: 0.4 }}
           className="absolute inset-0 w-full h-full object-cover"
         />
         {product.imageAlt && (
-          <motion.img
+          <ProductImage animated
             src={product.imageAlt}
             alt={product.name + ' alt'}
-            onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/400x500/f3f4f6/9ca3af?text=Lỗi+Ảnh'; }}
+            
             animate={{ opacity: hovered ? 1 : 0 }}
             transition={{ duration: 0.4 }}
             className="absolute inset-0 w-full h-full object-cover"
@@ -90,13 +89,14 @@ const ProductCard = ({ product }) => {
 
         {/* Low stock warning */}
         {product.stock <= 30 && (
-          <span className="absolute top-3 right-3 text-[10px] font-semibold text-amber-600 bg-amber-50 dark:bg-amber-950 px-2 py-1 rounded-full z-10">
+          <span className="absolute top-12 right-3 text-[10px] font-semibold text-amber-600 bg-amber-50/90 dark:bg-amber-950/90 backdrop-blur-sm px-2 py-0.5 rounded-full z-10 border border-amber-200 dark:border-amber-800">
             Còn {product.stock}
           </span>
         )}
 
         {/* Wishlist Button */}
         <button
+          aria-label={isWishlisted ? 'Bỏ yêu thích' : 'Thêm yêu thích'}
           onClick={handleToggleWishlist}
           className={cn(
             'absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition-all z-20',
@@ -107,7 +107,7 @@ const ProductCard = ({ product }) => {
         </button>
 
         {/* Add to cart slide-up */}
-        <div className="absolute bottom-0 left-0 w-full translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out z-10">
+        <div className="absolute bottom-0 left-0 w-full md:translate-y-full group-hover:translate-y-0 group-focus-within:translate-y-0 transition-transform duration-300 ease-out z-10">
           <button
             onClick={handleAdd}
             className={cn(
@@ -123,7 +123,8 @@ const ProductCard = ({ product }) => {
       {/* Info */}
       <div className="flex flex-col gap-1 px-0.5">
         <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{product.category || 'Thời trang'}</p>
-        <h3 className="font-semibold text-sm leading-snug line-clamp-2">{product.name}</h3>
+        <h3 className="font-semibold text-sm leading-snug line-clamp-2"><Link to={`/store/products/${product.id}`} onClick={event => event.stopPropagation()}>{product.name}</Link></h3>
+        {product.sold > 0 && <p className="text-xs text-muted-foreground">Đã bán {product.sold.toLocaleString('vi-VN')}</p>}
         <div className="flex items-baseline gap-2 mt-0.5">
           <span className="font-bold text-sm">{Number(product.price).toLocaleString('vi-VN')}đ</span>
         </div>
@@ -132,12 +133,13 @@ const ProductCard = ({ product }) => {
   );
 };
 
-const FeaturedGrid = ({ limit }) => {
+const FeaturedGrid = ({ limit, bestSellers = false }) => {
+  const navigate = useNavigate();
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [page, setPage] = useState(1);
   const [category, setCategory] = useState('Tất cả');
-  const [showFilter, setShowFilter] = useState(false);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -148,6 +150,7 @@ const FeaturedGrid = ({ limit }) => {
           setProducts(res.data);
         }
       } catch (error) {
+        setLoadError(true);
         console.error('Lỗi lấy danh sách sản phẩm:', error);
       }
       setIsLoading(false);
@@ -158,8 +161,8 @@ const FeaturedGrid = ({ limit }) => {
   const ALL_CATEGORIES = ['Tất cả', ...Array.from(new Set(products.map(p => p.category_name).filter(Boolean)))];
 
   const filtered = products.filter(p =>
-    category === 'Tất cả' || p.category_name === category
-  );
+    (category === 'Tất cả' || p.category_name === category) && (!bestSellers || Number(p.sold_count) > 0)
+  ).sort((a, b) => bestSellers ? Number(b.sold_count) - Number(a.sold_count) || b.product_id - a.product_id : 0);
 
   const source = limit ? filtered.slice(0, limit) : filtered;
   const totalPages = Math.ceil(source.length / PAGE_SIZE);
@@ -177,7 +180,7 @@ const FeaturedGrid = ({ limit }) => {
         <div className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
           <div>
             <h2 className="text-2xl md:text-4xl font-black uppercase tracking-tight mb-1">
-              {limit ? 'Hàng Mới Về' : 'Tất cả sản phẩm'}
+              {bestSellers ? 'Sản phẩm bán chạy' : limit ? 'Hàng Mới Về' : 'Tất cả sản phẩm'}
             </h2>
             <p className="text-muted-foreground text-sm uppercase tracking-widest">
               {source.length} sản phẩm
@@ -186,7 +189,7 @@ const FeaturedGrid = ({ limit }) => {
           <div className="flex items-center gap-3">
             {!limit && (
               <button
-                onClick={() => setShowFilter(f => !f)}
+                onClick={() => navigate('/store/products')}
                 className="flex items-center gap-2 text-xs font-semibold border border-border px-4 py-2.5 rounded-full hover:bg-muted transition-colors"
               >
                 <SlidersHorizontal size={14} />
@@ -194,7 +197,7 @@ const FeaturedGrid = ({ limit }) => {
               </button>
             )}
             {limit && (
-              <Link to="/store/products" className="text-xs font-bold tracking-widest uppercase border-b-2 border-foreground pb-0.5 hover:text-muted-foreground hover:border-muted-foreground transition-all">
+              <Link to={bestSellers ? '/store/products?sort=best-selling' : '/store/products'} className="text-xs font-bold tracking-widest uppercase border-b-2 border-foreground pb-0.5 hover:text-muted-foreground hover:border-muted-foreground transition-all">
                 Xem tất cả →
               </Link>
             )}
@@ -242,7 +245,9 @@ const FeaturedGrid = ({ limit }) => {
                     name: product.product_name,
                     category: product.category_name,
                     price: product.base_price,
-                    image: product.primary_image || 'https://via.placeholder.com/400x500?text=No+Image'
+                    tag: bestSellers ? 'Bán chạy' : undefined,
+                    sold: Number(product.sold_count),
+                    image: product.primary_image
                   }} 
                 />
               ))}
@@ -250,9 +255,9 @@ const FeaturedGrid = ({ limit }) => {
           </AnimatePresence>
         )}
 
-        {paginated.length === 0 && (
+        {!isLoading && paginated.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-            <p>Không có sản phẩm nào trong danh mục này.</p>
+            <p>{loadError ? 'Không tải được sản phẩm. Vui lòng tải lại trang.' : bestSellers ? 'Chưa có dữ liệu bán hàng hoàn tất trong danh mục này.' : 'Không có sản phẩm nào trong danh mục này.'}</p>
           </div>
         )}
 

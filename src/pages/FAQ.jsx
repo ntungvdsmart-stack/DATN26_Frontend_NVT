@@ -1,71 +1,40 @@
-import React, { useState, useEffect } from 'react';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { HelpCircle, ChevronDown, Loader2 } from 'lucide-react';
+import { HelpCircle, ChevronDown, Search, ArrowRight, AlertCircle } from 'lucide-react';
 import faqApi from '../api/faqApi';
 
-const FAQ = () => {
+export default function FAQ() {
   const [faqs, setFaqs] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [openIndex, setOpenIndex] = useState(null);
-
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  const [openId, setOpenId] = useState(null);
+  const [search, setSearch] = useState('');
   useEffect(() => {
-    faqApi.getActive().then(res => {
-      if (res?.success) setFaqs(res.data);
-      setIsLoading(false);
-    }).catch(() => setIsLoading(false));
-  }, []);
-
-  return (
-    <div className="bg-background min-h-screen pt-10 pb-20">
-      <div className="container mx-auto px-4 max-w-3xl">
-        <div className="text-center mb-12">
-          <HelpCircle className="w-16 h-16 mx-auto mb-6 text-primary" />
-          <h1 className="text-4xl font-black uppercase tracking-tight mb-4">Câu Hỏi Thường Gặp</h1>
-          <p className="text-muted-foreground max-w-xl mx-auto">
-            Tìm câu trả lời cho các thắc mắc về mua sắm, thanh toán, giao hàng và chính sách đổi trả tại FashionOS.
-          </p>
-        </div>
-
-        {isLoading ? (
-          <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>
-        ) : (
-          <div className="space-y-4">
-            {faqs.map((faq, index) => {
-              const isOpen = openIndex === index;
-              return (
-                <div key={faq.faq_id} className="border border-border rounded-2xl overflow-hidden bg-card transition-all hover:border-primary/50">
-                  <button 
-                    onClick={() => setOpenIndex(isOpen ? null : index)}
-                    className="w-full flex items-center justify-between p-6 text-left focus:outline-none"
-                  >
-                    <span className="font-bold text-lg pr-4">{faq.question}</span>
-                    <ChevronDown className={`w-5 h-5 text-primary shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
-                  </button>
-                  <AnimatePresence>
-                    {isOpen && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.3, ease: 'easeInOut' }}
-                      >
-                        <div className="p-6 pt-0 text-muted-foreground whitespace-pre-line leading-relaxed">
-                          {faq.answer}
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-            {faqs.length === 0 && (
-              <p className="text-center text-muted-foreground py-10">Hiện chưa có câu hỏi nào.</p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-export default FAQ;
+    let active = true;
+    faqApi.getActive().then(res => { if (active) { if (!res?.success) throw new Error('Không tải được câu hỏi'); setFaqs(res.data || []); } })
+      .catch(() => { if (active) setError('Không tải được câu hỏi. Vui lòng thử lại.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [reload]);
+  const normalize = value => String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+  const filtered = faqs.filter(faq => normalize(`${faq.question} ${faq.answer}`).includes(normalize(search.trim())));
+  const listPage = useListPagination(filtered, search);
+  return <div className="customer-page"><main className="customer-container max-w-4xl space-y-7">
+    <header className="text-center max-w-xl mx-auto pt-2 sm:pt-5"><span className="customer-empty-icon mx-auto mb-5"><HelpCircle size={28} strokeWidth={1.5} /></span><p className="customer-eyebrow">TRUNG TÂM HỖ TRỢ</p><h1 className="customer-title">Bạn cần giúp gì?</h1><p className="customer-description">Tìm câu trả lời về mua sắm, thanh toán, giao hàng và đổi trả tại FashionOS.</p></header>
+    <label className="relative block max-w-xl mx-auto"><Search size={19} className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground" /><input aria-label="Tìm câu hỏi" value={search} maxLength={200} onChange={event => { setSearch(event.target.value); setOpenId(null); }} placeholder="Tìm câu hỏi, ví dụ: giao hàng, đổi trả..." className="customer-input w-full pl-12 shadow-sm" /></label>
+    {loading ? <div role="status" className="space-y-3"><span className="sr-only">Đang tải câu hỏi</span>{[1,2,3,4].map(id => <div key={id} className="h-20 rounded-2xl bg-muted animate-pulse" />)}</div> : error ? <div role="alert" className="customer-surface customer-empty"><AlertCircle size={28} className="text-destructive" /><p>{error}</p><button className="customer-secondary" onClick={() => { setLoading(true); setError(''); setReload(value => value + 1); }}>Thử lại</button></div> : <>
+      <div className="flex justify-between items-center text-xs text-muted-foreground"><span>Câu hỏi thường gặp</span><span>{filtered.length} câu hỏi</span></div>
+      <div className="space-y-3">{listPage.items.map(faq => {
+        const open = openId === faq.faq_id;
+        return <article key={faq.faq_id} className={`customer-surface overflow-hidden ${open ? 'border-foreground/25' : ''}`}><h2><button aria-expanded={open} aria-controls={`faq-answer-${faq.faq_id}`} onClick={() => setOpenId(open ? null : faq.faq_id)} className="flex items-center justify-between gap-4 w-full p-5 sm:p-6 text-left"><span className="font-semibold text-sm sm:text-base leading-relaxed break-words min-w-0">{faq.question}</span><ChevronDown size={18} className={`shrink-0 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} /></button></h2><AnimatePresence initial={false}>{open && <motion.div id={`faq-answer-${faq.faq_id}`} initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: .2 }}><p className="px-5 sm:px-6 pb-6 text-sm text-muted-foreground leading-7 whitespace-pre-line break-words">{faq.answer}</p></motion.div>}</AnimatePresence></article>;
+      })}</div>
+      {!filtered.length && <div className="customer-surface customer-empty"><Search size={30} className="text-muted-foreground" /><h2>{search ? 'Chưa tìm thấy câu trả lời' : 'Chưa có câu hỏi được đăng'}</h2><p>Thử từ khóa khác hoặc mở chat để được shop hỗ trợ.</p>{search && <button onClick={() => setSearch('')} className="customer-secondary">Xóa tìm kiếm</button>}</div>}
+      {listPage.paginationProps.totalPages > 1 && <Pagination {...listPage.paginationProps} />}
+    </>}
+    <aside className="customer-surface flex flex-col sm:flex-row sm:items-center justify-between gap-5 p-5 sm:p-6"><div><h2 className="font-semibold">Bạn muốn kiểm tra đơn mua?</h2><p className="text-sm text-muted-foreground mt-1">Xem tiến độ và thông tin đơn hàng trong tài khoản.</p></div><Link to="/store/orders" className="customer-secondary shrink-0">Đơn hàng của tôi<ArrowRight size={16} /></Link></aside>
+  </main></div>;
+}

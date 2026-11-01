@@ -1,7 +1,9 @@
+import ProductImage from '../components/shared/ProductImage';
+import ModalLayer from '../components/shared/ModalLayer';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronRight, ChevronLeft, Heart, Share2, ShoppingBag, Truck, RotateCcw, ShieldCheck, Loader2, Star, Send, ZoomIn, X } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Heart, Truck, RotateCcw, ShieldCheck, Loader2, Star, Send, ZoomIn, X } from 'lucide-react';
 import productApi from '../api/productApi';
 import reviewApi from '../api/reviewApi';
 import { useCartStore } from '../store/cartStore';
@@ -24,14 +26,13 @@ const ProductDetail = () => {
   // Lựa chọn hiện tại
   const [selectedColor, setSelectedColor] = useState('');
   const [selectedSize, setSelectedSize] = useState('');
-  const [quantity, setQuantity] = useState(1);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [added, setAdded] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
   const [zoomPosition, setZoomPosition] = useState({ x: 50, y: 50 });
   const [isSizeGuideOpen, setIsSizeGuideOpen] = useState(false);
 
-  const { items: wishlistItems, toggleItem, isInWishlist } = useWishlistStore();
+  const { toggleItem, isInWishlist } = useWishlistStore();
   const isWishlisted = product ? isInWishlist(product.product_id) : false;
 
   const handleToggleWishlist = () => {
@@ -64,18 +65,21 @@ const ProductDetail = () => {
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    let active = true;
+    setSelectedColor(''); setSelectedSize(''); setActiveImageIndex(0); setRelatedProducts([]);
     const fetchProduct = async () => {
       setIsLoading(true);
       setError(null);
       try {
         const res = await productApi.getByIdPublic(id);
+        if (!active) return;
         if (res && res.success && res.data) {
           setProduct(res.data);
           
           // Fetch related products (same category)
           if (res.data.category_id) {
-            const relatedRes = await productApi.getAllPublic();
-            if (relatedRes && relatedRes.success) {
+            const relatedRes = await productApi.getAllPublic().catch(() => null);
+            if (active && relatedRes && relatedRes.success) {
               const filtered = relatedRes.data
                 .filter(p => p.category_id === res.data.category_id && p.product_id !== res.data.product_id)
                 .slice(0, 4);
@@ -85,12 +89,13 @@ const ProductDetail = () => {
         } else {
           setError('Không tìm thấy sản phẩm');
         }
-      } catch (err) {
-        setError('Lỗi kết nối. Vui lòng thử lại sau.');
+      } catch  {
+        if (active) setError('Lỗi kết nối. Vui lòng thử lại sau.');
       }
-      setIsLoading(false);
+      if (active) setIsLoading(false);
     };
     fetchProduct();
+    return () => { active = false; };
   }, [id]);
 
   // Derived state: Lọc ra các màu và size có sẵn từ danh sách biến thể
@@ -147,7 +152,7 @@ const ProductDetail = () => {
     result.push(...otherImages);
     
     return result.length > 0 ? result : product.images;
-  }, [product?.images]);
+  }, [product]);
 
   // Tìm ảnh đại diện cho từng màu (dùng cho thumbnail swatch)
   const getColorThumbnail = useCallback((colorId) => {
@@ -163,22 +168,21 @@ const ProductDetail = () => {
     return primary?.image_url || product.images[0]?.image_url || null;
   }, [product]);
 
-  // Reset selected size và chuyển ảnh khi đổi màu
-  useEffect(() => {
+  // Đổi màu: Reset selected size và chuyển ảnh tương ứng
+  const handleSelectColor = (colorId) => {
+    const nextColor = String(colorId);
+    setSelectedColor(nextColor);
     setSelectedSize('');
-    setQuantity(1);
-    
     if (product?.variants && displayImages.length > 0) {
       const variantIds = product.variants
-        .filter(v => String(v.color_id) === String(selectedColor))
+        .filter(v => String(v.color_id) === nextColor)
         .map(v => v.variant_id);
-        
       const imgIndex = displayImages.findIndex(img => img.variant_id && variantIds.includes(img.variant_id));
       setActiveImageIndex(imgIndex !== -1 ? imgIndex : 0);
     } else {
       setActiveImageIndex(0);
     }
-  }, [selectedColor, product?.variants, displayImages]);
+  };
 
   // Xác định variant đang được chọn cụ thể
   const selectedVariant = useMemo(() => {
@@ -218,7 +222,7 @@ const ProductDetail = () => {
       return;
     }
 
-    addItem({
+    const addedToCart = addItem({
       id: selectedVariant.variant_id,
       product_id: product.product_id,
       name: product.product_name,
@@ -227,9 +231,11 @@ const ProductDetail = () => {
       image: displayImages[0]?.image_url,
       color: availableColors.find(c => String(c.id) === String(selectedColor))?.name,
       size: availableSizesForColor.find(s => String(s.id) === String(selectedSize))?.name,
-      sku: selectedVariant.sku
+      sku: selectedVariant.sku,
+      maxStock: Number(maxStock)
     });
 
+    if (!addedToCart) { toast.error('Số lượng trong giỏ đã đạt tồn kho hiện có'); return; }
     setAdded(true);
     toast.success('Đã thêm vào giỏ hàng');
     setTimeout(() => setAdded(false), 2000);
@@ -277,7 +283,7 @@ const ProductDetail = () => {
                       : 'border-transparent hover:border-foreground/30'
                   )}
                 >
-                  <img src={img.image_url} alt="" className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/400x500/f3f4f6/9ca3af?text=Lỗi+Ảnh'; }} />
+                  <ProductImage src={img.image_url} alt="" className="w-full h-full object-cover"  />
                   {/* Badge: Ảnh chính */}
                   {img.is_primary ? (
                     <div className="absolute top-0.5 left-0.5 bg-foreground/80 text-background text-[7px] font-bold px-1 py-0.5 rounded">
@@ -305,12 +311,12 @@ const ProductDetail = () => {
               onMouseMove={handleMouseMove}
             >
               <AnimatePresence mode="wait">
-                <motion.img
+                <ProductImage animated
                   key={`${activeImageIndex}-${selectedColor}`}
                   initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}
                   src={displayImages[activeImageIndex]?.image_url}
                   alt={product.product_name}
-                  onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/800x1000/f3f4f6/9ca3af?text=Lỗi+Ảnh'; }}
+                  
                   className="absolute inset-0 w-full h-full object-cover transition-transform duration-300"
                   style={isZoomed ? { 
                     transform: 'scale(1.8)', 
@@ -363,6 +369,7 @@ const ProductDetail = () => {
           {/* ═══ CỘT PHẢI: THÔNG TIN SẢN PHẨM ═══ */}
           <div className="w-full lg:w-2/5 flex flex-col pt-4 lg:pt-0 sticky top-24">
             <h1 className="text-3xl md:text-4xl font-black tracking-tight uppercase leading-none mb-2">{product.product_name}</h1>
+            <a href="#product-reviews" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground underline underline-offset-4 mb-4"><Star size={14} />Xem đánh giá từ khách hàng</a>
             {product.brand_name && <p className="text-sm font-semibold text-muted-foreground uppercase tracking-widest mb-4">{product.brand_name}</p>}
 
             <div className="text-2xl font-medium mb-8">
@@ -384,7 +391,7 @@ const ProductDetail = () => {
                   return (
                     <button
                       key={color.id}
-                      onClick={() => setSelectedColor(String(color.id))}
+                      onClick={() => handleSelectColor(color.id)}
                       className={cn(
                         "relative rounded-xl overflow-hidden border-2 transition-all group/swatch",
                         isSelected 
@@ -396,7 +403,7 @@ const ProductDetail = () => {
                       {/* Nếu có ảnh thumbnail cho màu này → hiển thị ảnh nhỏ */}
                       {thumb ? (
                         <div className="w-14 h-[72px] relative">
-                          <img src={thumb} alt={color.name} className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/100x100/f3f4f6/9ca3af?text=Lỗi'; }} />
+                          <ProductImage src={thumb} alt={color.name} className="w-full h-full object-cover"  />
                           {/* Tên màu overlay */}
                           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent py-1 px-1">
                             <span className="text-[8px] font-bold text-white block text-center leading-tight truncate">
@@ -530,15 +537,15 @@ const ProductDetail = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-8 border-t border-border pt-8">
               <div className="flex items-center gap-3">
                 <Truck className="w-5 h-5 text-muted-foreground" />
-                <span className="text-xs font-medium uppercase tracking-wider">Miễn phí giao hàng</span>
+                <span className="text-xs font-medium uppercase tracking-wider">Phí giao hàng hiển thị khi thanh toán</span>
               </div>
               <div className="flex items-center gap-3">
                 <RotateCcw className="w-5 h-5 text-muted-foreground" />
-                <span className="text-xs font-medium uppercase tracking-wider">Đổi trả 30 ngày</span>
+                <Link to="/store/faq" className="text-xs font-medium uppercase tracking-wider underline">Xem chính sách đổi trả</Link>
               </div>
               <div className="flex items-center gap-3">
                 <ShieldCheck className="w-5 h-5 text-muted-foreground" />
-                <span className="text-xs font-medium uppercase tracking-wider">Bảo hành 1 năm</span>
+                <span className="text-xs font-medium uppercase tracking-wider">Liên hệ nhân viên để xác nhận bảo hành</span>
               </div>
             </div>
           </div>
@@ -546,7 +553,7 @@ const ProductDetail = () => {
       </div>
 
       {/* ──────────── SECTION: ĐÁNH GIÁ SẢN PHẨM ──────────── */}
-      <ReviewSection productId={id} user={user} />
+      <ReviewSection key={`${id}-${user?.id || user?.customer_id || 'guest'}`} productId={id} user={user} />
 
       {/* Related Products */}
       {relatedProducts.length > 0 && (
@@ -569,10 +576,10 @@ const ProductDetail = () => {
                 }}
               >
                 <div className="aspect-[3/4] mb-4 bg-muted overflow-hidden relative">
-                  <img 
-                    src={p.primary_image || 'https://placehold.co/300x400/f3f4f6/9ca3af?text=No+Image'} 
+                  <ProductImage 
+                    src={p.primary_image} 
                     alt={p.product_name} 
-                    onError={(e) => { e.target.onerror = null; e.target.src = 'https://placehold.co/300x400/f3f4f6/9ca3af?text=Lỗi+Ảnh'; }}
+                    
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                   />
                 </div>
@@ -592,7 +599,7 @@ const ProductDetail = () => {
       {/* ──────────── MODAL HƯỚNG DẪN CHỌN SIZE ──────────── */}
       <AnimatePresence>
         {isSizeGuideOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalLayer onClose={() => setIsSizeGuideOpen(false)} label="Hướng dẫn chọn size"><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div 
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -627,7 +634,7 @@ const ProductDetail = () => {
                 />
               </div>
             </motion.div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
 
@@ -645,6 +652,8 @@ const StarRating = ({ rating, size = 16, interactive = false, onChange }) => {
       {[1, 2, 3, 4, 5].map(star => (
         <button
           key={star}
+          aria-label={`${star} sao`}
+          aria-pressed={interactive ? rating === star : undefined}
           type={interactive ? 'button' : undefined}
           onClick={() => interactive && onChange?.(star)}
           onMouseEnter={() => interactive && setHover(star)}
@@ -672,6 +681,8 @@ const StarRating = ({ rating, size = 16, interactive = false, onChange }) => {
 const ReviewSection = ({ productId, user }) => {
   const [reviewData, setReviewData] = useState({ stats: null, reviews: [] });
   const [canReview, setCanReview] = useState(false);
+  const [ownReviews, setOwnReviews] = useState([]);
+  const [editingId, setEditingId] = useState(null);
   const [reviewableVariants, setReviewableVariants] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -682,49 +693,55 @@ const ReviewSection = ({ productId, user }) => {
   const [submitting, setSubmitting] = useState(false);
   const [submitMsg, setSubmitMsg] = useState({ type: '', text: '' });
 
-  useEffect(() => {
-    fetchReviews();
-    if (user && user.role === 'customer') {
-      checkCanReview();
-    }
-  }, [productId, user]);
-
-  const fetchReviews = async () => {
+  const fetchReviews = useCallback(async (page = 1) => {
     setLoading(true);
     try {
-      const res = await reviewApi.getProductReviews(productId);
+      const res = await reviewApi.getProductReviews(productId, page);
       if (res?.success) setReviewData(res.data);
-    } catch (err) { /* ignore */ }
+    } catch  { setSubmitMsg({ type: 'error', text: 'Không tải được đánh giá. Vui lòng thử lại.' }); }
     setLoading(false);
-  };
+  }, [productId]);
 
-  const checkCanReview = async () => {
+  const checkCanReview = useCallback(async () => {
     try {
       const res = await reviewApi.checkCanReview(productId);
       if (res?.success) {
         setCanReview(res.data.canReview);
         setReviewableVariants(res.data.reviewableVariants || []);
+        setOwnReviews(res.data.ownReviews || []);
       }
-    } catch (err) { /* ignore */ }
-  };
+    } catch  { /* ignore */ }
+  }, [productId]);
+
+  useEffect(() => {
+    setCanReview(false); setOwnReviews([]); setReviewableVariants([]);
+    setShowForm(false); setEditingId(null); setSubmitMsg({ type: '', text: '' });
+    fetchReviews();
+    if (user && user.role === 'customer') {
+      checkCanReview();
+    }
+  }, [productId, user, fetchReviews, checkCanReview]);
 
   const handleSubmitReview = async (e) => {
     e.preventDefault();
+    if (submitting) return;
     if (!formRating) return setSubmitMsg({ type: 'error', text: 'Vui lòng chọn số sao' });
     if (!formVariantId) return setSubmitMsg({ type: 'error', text: 'Vui lòng chọn phiên bản đã mua' });
 
     setSubmitting(true);
     setSubmitMsg({ type: '', text: '' });
     try {
-      const res = await reviewApi.createReview(productId, {
+      const payload = {
         variant_id: Number(formVariantId),
         rating: formRating,
-        comment: formComment
-      });
+        comment: formComment.trim()
+      };
+      const res = editingId ? await reviewApi.updateReview(editingId, payload) : await reviewApi.createReview(productId, payload);
       if (res?.success) {
         setSubmitMsg({ type: 'success', text: 'Cảm ơn bạn đã đánh giá!' });
         setFormRating(0); setFormComment(''); setFormVariantId('');
         setShowForm(false);
+        setEditingId(null);
         fetchReviews();
         checkCanReview();
       } else {
@@ -740,14 +757,28 @@ const ReviewSection = ({ productId, user }) => {
   const reviews = reviewData.reviews || [];
   const totalReviews = Number(stats?.total_reviews || 0);
   const avgRating = Number(stats?.avg_rating || 0);
+  const deleteOwnReview = async (id) => {
+    if (submitting || !window.confirm('Xóa đánh giá của bạn?')) return;
+    setSubmitting(true);
+    try {
+      await reviewApi.deleteReview(id);
+      setShowForm(false); setEditingId(null);
+      setSubmitMsg({ type: 'success', text: 'Đã xóa đánh giá' });
+      await Promise.all([fetchReviews(), checkCanReview()]);
+    } catch (error) {
+      setSubmitMsg({ type: 'error', text: error.response?.data?.message || 'Không xóa được đánh giá' });
+    } finally { setSubmitting(false); }
+  };
 
   return (
-    <div className="container mx-auto px-4 mt-16 md:mt-20">
+    <div id="product-reviews" className="container mx-auto px-4 mt-16 md:mt-20 scroll-mt-40">
       <div className="max-w-4xl mx-auto">
         <h2 className="text-2xl font-black uppercase tracking-tight mb-8 border-b border-border pb-4">
           Đánh giá sản phẩm
           {totalReviews > 0 && <span className="text-muted-foreground font-medium text-base ml-3">({totalReviews})</span>}
         </h2>
+
+        {!user && <p className="text-sm text-muted-foreground mb-6">Bạn có thể xem tất cả đánh giá mà không cần đăng nhập. <Link to="/login" state={{ from: { pathname: `/store/products/${productId}` } }} className="font-medium text-foreground underline underline-offset-4">Đăng nhập</Link> để đánh giá sản phẩm đã mua và có đơn hoàn tất.</p>}
 
         {loading ? (
           <div className="flex items-center justify-center py-12"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
@@ -779,9 +810,24 @@ const ReviewSection = ({ productId, user }) => {
               </div>
             )}
 
+            {ownReviews.length > 0 && !showForm && (
+              <div className="mb-6 space-y-3 border border-border p-4">
+                <h3 className="font-bold">Đánh giá của bạn</h3>
+                {ownReviews.map(review => (
+                  <div key={review.review_id} className="flex flex-wrap items-center gap-3 text-sm">
+                    <span className="min-w-0 break-words flex-1">{review.color_name} · {review.size_value} · {review.rating} sao</span>
+                    <button type="button" disabled={submitting} className="border border-border px-4 py-2" onClick={() => {
+                      setEditingId(review.review_id); setFormRating(Number(review.rating));
+                      setFormComment(review.comment || ''); setFormVariantId(String(review.variant_id)); setShowForm(true);
+                    }}>Sửa</button>
+                    <button type="button" disabled={submitting} className="border border-border px-4 py-2 text-red-600" onClick={() => deleteOwnReview(review.review_id)}>Xóa</button>
+                  </div>
+                ))}
+              </div>
+            )}
             {/* Write review button */}
             {canReview && !showForm && (
-              <button onClick={() => setShowForm(true)} className="mb-8 bg-foreground text-background px-6 py-3 font-bold text-xs uppercase tracking-widest hover:bg-foreground/90 transition-colors">
+              <button onClick={() => { setEditingId(null); setFormRating(0); setFormComment(''); setFormVariantId(''); setShowForm(true); }} className="mb-8 bg-foreground text-background px-6 py-3 font-bold text-xs uppercase tracking-widest hover:bg-foreground/90 transition-colors">
                 Viết đánh giá
               </button>
             )}
@@ -800,9 +846,9 @@ const ReviewSection = ({ productId, user }) => {
                   <div className="space-y-4">
                     <div>
                       <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 block">Phiên bản đã mua *</label>
-                      <select value={formVariantId} onChange={e => setFormVariantId(e.target.value)} className="w-full md:w-auto px-4 py-2.5 bg-background border border-border outline-none focus:border-foreground transition-colors text-sm">
+                      <select required disabled={!!editingId} value={formVariantId} onChange={e => setFormVariantId(e.target.value)} className="w-full md:w-auto max-w-full px-4 py-2.5 bg-background border border-border outline-none focus:border-foreground transition-colors text-sm">
                         <option value="">Chọn phiên bản</option>
-                        {reviewableVariants.map(v => (
+                        {(editingId ? ownReviews.filter(v => v.review_id === editingId) : reviewableVariants).map(v => (
                           <option key={v.variant_id} value={v.variant_id}>{v.color_name || ''} {v.size_value ? `- ${v.size_value}` : ''}</option>
                         ))}
                       </select>
@@ -813,20 +859,27 @@ const ReviewSection = ({ productId, user }) => {
                     </div>
                     <div>
                       <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2 block">Nhận xét (tùy chọn)</label>
-                      <textarea value={formComment} onChange={e => setFormComment(e.target.value)} rows={4} placeholder="Chia sẻ trải nghiệm của bạn..." className="w-full px-4 py-3 bg-background border border-border outline-none focus:border-foreground transition-colors text-sm resize-none" />
+                      <textarea maxLength={2000} aria-label="Nhận xét" value={formComment} onChange={e => setFormComment(e.target.value)} rows={4} placeholder="Chia sẻ trải nghiệm của bạn..." className="w-full px-4 py-3 bg-background border border-border outline-none focus:border-foreground transition-colors text-sm resize-none" />
                     </div>
-                    <div className="flex gap-3">
+                    <div className="flex flex-wrap gap-3">
                       <button type="submit" disabled={submitting} className="bg-foreground text-background px-6 py-3 font-bold text-xs uppercase tracking-widest hover:bg-foreground/90 transition-colors disabled:opacity-50 flex items-center gap-2">
                         {submitting ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                        Gửi đánh giá
+                        {editingId ? 'Lưu đánh giá' : 'Gửi đánh giá'}
                       </button>
-                      <button type="button" onClick={() => setShowForm(false)} className="px-6 py-3 font-bold text-xs uppercase tracking-widest border border-border hover:bg-muted transition-colors">Hủy</button>
+                      <button type="button" disabled={submitting} onClick={() => { setShowForm(false); setEditingId(null); }} className="px-6 py-3 font-bold text-xs uppercase tracking-widest border border-border hover:bg-muted transition-colors">Hủy</button>
                     </div>
                   </div>
                 </motion.form>
               )}
             </AnimatePresence>
 
+            {Number(reviewData.pagination?.totalPages) > 1 && (
+              <nav aria-label="Trang đánh giá" className="flex flex-wrap items-center gap-3 mb-6">
+                <button disabled={reviewData.pagination.page <= 1} onClick={() => fetchReviews(reviewData.pagination.page - 1)} className="border px-4 py-2 disabled:opacity-40">Trước</button>
+                <span>{reviewData.pagination.page}/{reviewData.pagination.totalPages}</span>
+                <button disabled={reviewData.pagination.page >= reviewData.pagination.totalPages} onClick={() => fetchReviews(reviewData.pagination.page + 1)} className="border px-4 py-2 disabled:opacity-40">Sau</button>
+              </nav>
+            )}
             {/* Reviews list */}
             {reviews.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
@@ -856,7 +909,7 @@ const ReviewSection = ({ productId, user }) => {
                     </div>
                     <StarRating rating={review.rating} size={14} />
                     {review.comment && (
-                      <p className="mt-3 text-sm text-muted-foreground leading-relaxed">{review.comment}</p>
+                      <p className="mt-3 text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-words">{review.comment}</p>
                     )}
                   </div>
                 ))}

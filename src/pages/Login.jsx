@@ -5,7 +5,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, User, Lock, Mail, Phone
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 // ─── Định nghĩa NGOÀI Login ─────────────────────────────────────────────────
@@ -22,7 +22,7 @@ const InputField = ({ icon: Icon, label, required, children, hint }) => (
 );
 
 // Constant style — định nghĩa ngoài để không tạo string mới mỗi render
-const INPUT_CLS = "w-full px-4 py-2.5 bg-muted/40 border border-border rounded-lg focus:border-foreground focus:ring-1 focus:ring-foreground/20 outline-none transition-all text-sm";
+const INPUT_CLS = "w-full px-4 py-2.5 bg-background border border-border rounded-xl focus:border-foreground focus:ring-1 focus:ring-foreground/20 outline-none transition-all text-sm";
 
 // Trạng thái ban đầu — tách ra ngoài để dùng lại cho reset
 const getInitialFields = () => ({
@@ -38,6 +38,7 @@ const getInitialFields = () => ({
 const Login = () => {
   const { login, register } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   // ── UI state ──
   const [isLogin, setIsLogin] = useState(true);
@@ -69,13 +70,14 @@ const Login = () => {
   const validateRegister = useCallback(() => {
     const { name, email, phone, password, confirmPassword } = fields;
     if (!name.trim())              { setErrorMsg('Vui lòng nhập họ và tên'); return false; }
-    if (name.trim().length < 2)    { setErrorMsg('Họ và tên phải có ít nhất 2 ký tự'); return false; }
+    if (name.trim().length < 2 || name.trim().length > 150) { setErrorMsg('Họ và tên phải có từ 2 đến 150 ký tự'); return false; }
     if (!email.trim())             { setErrorMsg('Vui lòng nhập email'); return false; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setErrorMsg('Email không hợp lệ'); return false; }
-    if (phone && !/^(0[3|5|7|8|9])+([0-9]{8})$/.test(phone)) {
+    if (email.trim().length > 150 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setErrorMsg('Email không hợp lệ'); return false; }
+    if (phone && !/^(0[0-9]{9}|\+84[0-9]{9})$/.test(phone.trim())) {
       setErrorMsg('Số điện thoại không hợp lệ (VD: 0912345678)'); return false;
     }
-    if (password.length < 6)       { setErrorMsg('Mật khẩu phải có ít nhất 6 ký tự'); return false; }
+    if (password.length < 8)       { setErrorMsg('Mật khẩu phải có ít nhất 8 ký tự'); return false; }
+    if (new TextEncoder().encode(password).length > 72) { setErrorMsg('Mật khẩu vượt quá giới hạn 72 byte, vui lòng rút ngắn'); return false; }
     if (password !== confirmPassword) { setErrorMsg('Mật khẩu xác nhận không khớp'); return false; }
     return true;
   }, [fields]);
@@ -104,7 +106,9 @@ const Login = () => {
           setSuccessMsg('Đăng nhập thành công! Đang chuyển hướng...');
           toast.success('Đăng nhập thành công!');
           setTimeout(() => {
-            navigate(res.role === 'admin' ? '/dashboard' : res.role === 'staff' ? '/pos' : '/store');
+            const from = location.state?.from;
+            const destination = res.role === 'customer' && from?.pathname?.startsWith('/store/') ? `${from.pathname}${from.search || ''}` : res.homePath || '/store';
+            navigate(destination, { replace: true });
           }, 800);
         } else {
           setErrorMsg(res?.message || 'Đăng nhập thất bại');
@@ -129,7 +133,7 @@ const Login = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [fields, isLogin, login, register, navigate, validateRegister, resetForm]);
+  }, [fields, isLogin, login, register, navigate, validateRegister, resetForm, rememberMe, location.state]);
 
 
   // ── Toggle mode (Login ↔ Register) ──
@@ -142,7 +146,7 @@ const Login = () => {
   const { identifier, email, password, confirmPassword, name, phone } = fields;
 
   return (
-    <div className="min-h-screen w-full flex bg-background relative overflow-hidden">
+    <div className="login-page min-h-screen w-full flex bg-background relative overflow-hidden">
 
       {/* ── Nửa trái: Hình ảnh thương hiệu (ẩn trên mobile) ── */}
       <motion.div
@@ -199,7 +203,7 @@ const Login = () => {
       </motion.div>
 
       {/* ── Nửa phải: Form ── */}
-      <div className="flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 xl:px-20 relative z-10 overflow-y-auto">
+      <div className="flex-1 flex flex-col justify-center px-4 sm:px-12 lg:px-16 xl:px-20 relative z-10 overflow-y-auto">
         <div className="absolute inset-0 z-0 lg:hidden opacity-10 pointer-events-none">
           <img src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=800&q=80" className="w-full h-full object-cover" alt="bg" />
         </div>
@@ -211,7 +215,7 @@ const Login = () => {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6, delay: 0.1 }}
         >
-          <div className="bg-card lg:bg-transparent p-6 sm:p-8 lg:p-0 rounded-2xl lg:rounded-none shadow-2xl lg:shadow-none border border-border/50 lg:border-none backdrop-blur-xl lg:backdrop-blur-none">
+          <div className="bg-card lg:bg-transparent p-5 sm:p-8 lg:p-0 rounded-2xl lg:rounded-none shadow-2xl lg:shadow-none border border-border/50 lg:border-none backdrop-blur-xl lg:backdrop-blur-none">
 
             {/* Logo mobile */}
             <Link to="/store" className="lg:hidden flex items-center justify-center gap-2 mb-7 w-max mx-auto">
@@ -270,14 +274,14 @@ const Login = () => {
                 {isLogin ? (
                   /* ── ĐĂNG NHẬP ── */
                   <div className="space-y-4">
-                    <InputField icon={Mail} label="Email" required>
+                    <InputField icon={Mail} label="Email hoặc tên đăng nhập" required>
                       <input
-                        type="email" required autoFocus
+                        type="text" required maxLength={150} autoComplete="username" autoFocus
                         value={identifier}
                         onChange={e => setField('identifier', e.target.value)}
                         className={INPUT_CLS}
-                        placeholder="email@example.com"
-                        autoComplete="email"
+                        placeholder="Email hoặc tên đăng nhập"
+                        autoComplete="username"
                       />
                     </InputField>
 
@@ -311,7 +315,7 @@ const Login = () => {
                             Nhớ mật khẩu
                           </span>
                         </label>
-                        <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors font-semibold">Quên mật khẩu?</a>
+                        <a href="/reset-password" className="text-xs text-muted-foreground hover:text-foreground transition-colors font-semibold">Quên mật khẩu?</a>
                       </div>
                     </InputField>
 
@@ -328,7 +332,7 @@ const Login = () => {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <InputField icon={User} label="Họ và tên" required>
-                        <input type="text" required autoFocus value={name}
+                        <input type="text" required minLength={2} maxLength={150} autoComplete="name" autoFocus value={name}
                           onChange={e => setField('name', e.target.value)}
                           className={INPUT_CLS} placeholder="Nguyễn Văn A"
                           autoComplete="name" />
@@ -343,16 +347,16 @@ const Login = () => {
                     </div>
 
                     <InputField icon={Mail} label="Email" required>
-                      <input type="email" required value={email}
+                      <input type="email" required maxLength={150} autoComplete="email" value={email}
                         onChange={e => setField('email', e.target.value)}
                         className={INPUT_CLS} placeholder="name@example.com"
                         autoComplete="email" />
                     </InputField>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <InputField icon={Lock} label="Mật khẩu" required hint="Tối thiểu 6 ký tự">
+                      <InputField icon={Lock} label="Mật khẩu" required hint="Tối thiểu 8 ký tự, tối đa 72 byte">
                         <div className="relative">
-                          <input type={showPassword ? 'text' : 'password'} required minLength={6}
+                          <input type={showPassword ? 'text' : 'password'} required minLength={8}
                             value={password} onChange={e => setField('password', e.target.value)}
                             className={`${INPUT_CLS} pr-10`} placeholder="••••••"
                             autoComplete="new-password" />
@@ -367,7 +371,7 @@ const Login = () => {
                         <div className="relative">
                           <input
                             type={showConfirmPassword ? 'text' : 'password'}
-                            required minLength={6}
+                            required minLength={8}
                             value={confirmPassword}
                             onChange={e => setField('confirmPassword', e.target.value)}
                             className={`${INPUT_CLS} pr-10 ${

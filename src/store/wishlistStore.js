@@ -1,6 +1,24 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import wishlistApi from '../api/wishlistApi';
+import productApi from '../api/productApi';
+import { toast } from 'sonner';
+const pending = new Set();
+const changeWishlist = async (product, get) => {
+  if (!localStorage.getItem('token')) { toast.error('Vui lòng đăng nhập để lưu sản phẩm yêu thích'); return; }
+  const id = product.product_id;
+  if (pending.has(id)) return;
+  pending.add(id);
+  try {
+    const saved = get().items.find(item => item.product_id === id);
+    let variantId = saved?.variant_id || product.variant_id;
+    if (!variantId) variantId = (await productApi.getByIdPublic(id)).data.variants?.[0]?.variant_id;
+    if (!variantId) { toast.error('Sản phẩm chưa có biến thể để lưu'); return; }
+    await wishlistApi.toggle(variantId);
+    await get().fetchWishlist();
+  } catch (error) { toast.error(error.message || 'Không cập nhật được danh sách yêu thích'); }
+  finally { pending.delete(id); }
+};
 
 export const useWishlistStore = create(
   persist(
@@ -12,6 +30,7 @@ export const useWishlistStore = create(
 
       // Sync từ server
       fetchWishlist: async () => {
+        const token = localStorage.getItem('token');
         try {
           const res = await wishlistApi.get();
           if (res && res.success) {
@@ -25,25 +44,19 @@ export const useWishlistStore = create(
               color: dbItem.color,
               size: dbItem.size
             }));
-            set({ items: mappedItems });
+            if (localStorage.getItem('token') === token) set({ items: mappedItems });
           }
-        } catch (error) {}
+        } catch  {}
       },
 
       addItem: async (product) => {
         const exists = get().items.find(i => i.product_id === product.product_id);
-        if (!exists) {
-          set(state => ({ items: [...state.items, product] }));
-        }
-        try { await wishlistApi.toggle(product.variant_id || product.product_id); } catch (e) {}
+        if (!exists) await changeWishlist(product, get);
       },
 
       removeItem: async (productId) => {
         const itemToRemove = get().items.find(i => i.product_id === productId);
-        set(state => ({ items: state.items.filter(i => i.product_id !== productId) }));
-        if (itemToRemove) {
-          try { await wishlistApi.toggle(itemToRemove.variant_id || itemToRemove.product_id); } catch (e) {}
-        }
+        if (itemToRemove) await changeWishlist(itemToRemove, get);
       },
 
       isInWishlist: (productId) => {
@@ -51,13 +64,7 @@ export const useWishlistStore = create(
       },
 
       toggleItem: async (product) => {
-        const exists = get().items.find(i => i.product_id === product.product_id);
-        if (exists) {
-          set(state => ({ items: state.items.filter(i => i.product_id !== product.product_id) }));
-        } else {
-          set(state => ({ items: [...state.items, product] }));
-        }
-        try { await wishlistApi.toggle(product.variant_id || product.product_id); } catch (e) {}
+        await changeWishlist(product, get);
       },
 
       clearAll: () => set({ items: [] })

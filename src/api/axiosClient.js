@@ -37,6 +37,11 @@ axiosClient.interceptors.response.use(
     return response;
   },
   (error) => {
+    if (error.response?.status === 401 && localStorage.getItem('token') && !error.config?.url?.startsWith('/auth/')) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      window.dispatchEvent(new Event('auth-expired'));
+    }
     // Giữ nguyên axios error để code dùng error.response?.data?.message hoạt động đúng
     // Nhưng đính thêm shorthand message cho tiện
     if (error.response && error.response.data) {

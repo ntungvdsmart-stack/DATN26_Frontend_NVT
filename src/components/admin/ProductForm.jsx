@@ -1,12 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  X, Plus, Save, Trash2, Image as ImageIcon, Loader2, AlertCircle,
-  Upload, Star, Link as LinkIcon, Tag, CheckCircle2
-} from 'lucide-react';
+import { X, Plus, Save, Trash2, Image as ImageIcon, Loader2, AlertCircle, Upload, Star, Link as LinkIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import productApi from '../../api/productApi';
 import QuickCreateModal from './QuickCreateModal';
+import ProductImage from '../shared/ProductImage';
 
 // ─── Ảnh 1 item (dùng lại cho list ảnh) ─────────────────────────────────────
 const ImageCard = ({ img, index, onRemove, onSetPrimary }) => {
@@ -36,11 +34,11 @@ const ImageCard = ({ img, index, onRemove, onSetPrimary }) => {
                   <span className="text-xs text-muted-foreground font-medium">{img.progress}%</span>
                 </div>
               : isBroken 
-                ? <div className="flex flex-col items-center gap-2 text-red-400">
-                    <AlertCircle className="w-10 h-10" />
-                    <span className="text-[10px] font-semibold">Ảnh không khả dụng</span>
+                ? <div className="relative w-full h-full">
+                    <ProductImage className="w-full h-full object-cover" alt="Ảnh đang cập nhật" />
+                    <span className="absolute inset-x-0 bottom-0 bg-background/90 py-1 text-center text-[10px] font-semibold text-red-500">Ảnh gốc không khả dụng</span>
                   </div>
-                : <ImageIcon className="w-10 h-10 text-muted-foreground/40" />
+                : <ProductImage className="w-full h-full object-cover" alt="Ảnh đang cập nhật" />
             }
           </div>
         )}
@@ -78,7 +76,7 @@ const ImageCard = ({ img, index, onRemove, onSetPrimary }) => {
 };
 
 // ─── ProductForm ─────────────────────────────────────────────────────────────
-const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
+const ProductForm = ({ onClose, onSuccess, editProduct = null, readOnly = false }) => {
   const isEditMode = !!editProduct;
   const fileInputRef = useRef(null);
   const sizeGuideInputRef = useRef(null);
@@ -87,7 +85,6 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingData, setIsFetchingData] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   // Dữ liệu cho các dropdown
   const [attrs, setAttrs] = useState({ categories: [], brands: [], sizes: [], colors: [], materials: [] });
@@ -149,7 +146,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
             })));
           }
         }
-      } catch (err) {
+      } catch  {
         setErrorMsg('Không thể tải dữ liệu. Vui lòng thử lại.');
       }
       setIsFetchingData(false);
@@ -260,7 +257,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
       } else {
         throw new Error('Lỗi upload từ web');
       }
-    } catch (err) {
+    } catch  {
       setImages(prev => prev.filter(img => img._uploadId !== uploadId));
       toast.error('Đường dẫn ảnh không hợp lệ hoặc web chặn tải xuống.');
     }
@@ -323,13 +320,23 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
   // ── Validate ─────────────────────────────────────────────────────────────────
   const validate = useCallback(() => {
     if (!info.product_name.trim()) return 'Vui lòng nhập tên sản phẩm';
+    if (info.product_name.trim().length < 2) return 'Tên sản phẩm phải có ít nhất 2 ký tự';
+    if (info.product_name.trim().length > 255) return 'Tên sản phẩm không được vượt quá 255 ký tự';
     if (!info.category_id) return 'Vui lòng chọn danh mục';
-    if (Number(info.base_price) <= 0) return 'Giá cơ bản phải lớn hơn 0';
+    if (Number(info.base_price) <= 0 || isNaN(Number(info.base_price))) return 'Giá cơ bản phải lớn hơn 0';
+    
+    const skuSet = new Set();
     for (let i = 0; i < variants.length; i++) {
       const v = variants[i];
-      if (Number(v.price) <= 0) return `Biến thể dòng ${i + 1}: Giá không hợp lệ`;
+      if (Number(v.price) <= 0 || isNaN(Number(v.price))) return `Biến thể dòng ${i + 1}: Giá phải lớn hơn 0`;
+      if (Number(v.quantity) < 0 || isNaN(Number(v.quantity))) return `Biến thể dòng ${i + 1}: Số lượng không được âm`;
+      const sku = v.sku?.trim().toUpperCase();
+      if (sku) {
+        if (skuSet.has(sku)) return `Mã SKU "${sku}" bị trùng lặp giữa các biến thể`;
+        skuSet.add(sku);
+      }
     }
-    if (images.filter(img => img.url && !img.uploading).length === 0)
+    if (images.filter(img => (img.url || img.file) && !img.uploading).length === 0)
       return 'Vui lòng tải lên ít nhất 1 ảnh sản phẩm';
     return null;
   }, [info, variants, images]);
@@ -337,6 +344,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
   // ── Submit ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
+    if (readOnly || isLoading) return;
     const err = validate();
     if (err) return setErrorMsg(err);
     if (images.some(i => i.uploading)) return setErrorMsg('Vui lòng chờ ảnh tải lên hoàn tất');
@@ -353,7 +361,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
         toast.loading('Đang tải ảnh lên...', { id: 'upload-toast' });
         const rawFiles = filesToUpload.map(img => img.file);
         
-        const uploadRes = await productApi.uploadImages(rawFiles, (percent) => {});
+        const uploadRes = await productApi.uploadImages(rawFiles);
         if (!uploadRes?.success) throw new Error(uploadRes?.message || 'Lỗi upload ảnh');
         
         uploadedUrls = uploadRes.data;
@@ -364,10 +372,8 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
       let uploadIndex = 0;
       const finalImages = images.map(img => {
         if (img.file) {
-          const uploadedInfo = uploadedUrls[uploadIndex++] || uploadedUrls[0] || {
-            url: 'https://placehold.co/400x500/f3f4f6/9ca3af?text=Lỗi+Tài+Khoản',
-            filename: `fallback-${Date.now()}`
-          };
+          const uploadedInfo = uploadedUrls[uploadIndex++];
+          if (!uploadedInfo?.url) throw new Error('Không nhận được ảnh đã tải lên. Vui lòng thử lại.');
           return {
             ...img,
             url: uploadedInfo.url,
@@ -387,7 +393,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
       let finalSizeGuideUrl = info.size_guide_image_url;
       if (sizeGuideFile) {
         toast.loading('Đang tải ảnh bảng size lên...', { id: 'upload-sg-toast' });
-        const sgUploadRes = await productApi.uploadImages([sizeGuideFile], (percent) => {});
+        const sgUploadRes = await productApi.uploadImages([sizeGuideFile]);
         if (!sgUploadRes?.success) throw new Error(sgUploadRes?.message || 'Lỗi upload ảnh bảng size');
         finalSizeGuideUrl = sgUploadRes.data[0].url;
         toast.dismiss('upload-sg-toast');
@@ -440,7 +446,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [validate, images, variants, info, isEditMode, editProduct, onSuccess]);
+  }, [validate, images, variants, info, isEditMode, editProduct, onSuccess, isLoading, readOnly, sizeGuideFile]);
 
   // ─── UI ─────────────────────────────────────────────────────────────────────
   const inputCls = "w-full px-3 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary/20 outline-none transition-all text-sm";
@@ -458,13 +464,13 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
         className="bg-background rounded-2xl shadow-2xl border border-border overflow-hidden flex flex-col"
-        style={{ height: 'calc(100vh - 64px)', maxHeight: 900 }}
+        style={{ height: 'calc(100dvh - 64px)', maxHeight: 900 }}
       >
       {/* Header */}
       <div className="px-6 py-4 border-b border-border flex justify-between items-center shrink-0 bg-muted/30">
         <div>
           <h2 className="text-xl font-black tracking-tight">
-            {isEditMode ? `Sửa: ${editProduct.product_name}` : 'Thêm Sản phẩm Mới'}
+            {isEditMode ? `${readOnly ? 'Xem' : 'Sửa'}: ${editProduct.product_name}` : 'Thêm Sản phẩm Mới'}
           </h2>
           <p className="text-xs text-muted-foreground mt-0.5">Quản lý thông tin, biến thể và hình ảnh sản phẩm</p>
         </div>
@@ -474,8 +480,9 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-6 space-y-6">
         <form id="productForm" onSubmit={handleSubmit}>
+          <fieldset disabled={readOnly} className="contents">
 
           {/* Thông báo */}
           <AnimatePresence>
@@ -483,12 +490,6 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
               <motion.div key="err" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
                 className="mb-4 p-3 bg-red-500/10 border border-red-500/20 text-red-600 text-sm rounded-lg flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0" /> {errorMsg}
-              </motion.div>
-            )}
-            {successMsg && (
-              <motion.div key="ok" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                className="mb-4 p-3 bg-green-500/10 border border-green-500/20 text-green-600 text-sm rounded-lg flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 shrink-0" /> {successMsg}
               </motion.div>
             )}
           </AnimatePresence>
@@ -796,7 +797,7 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
                           className="w-28 py-1.5 px-2 rounded border border-border bg-background outline-none focus:border-primary text-xs" />
                       </td>
                       <td className="px-2 py-2">
-                        <input type="number" min="0" value={v.quantity}
+                        <input type="number" min="0" value={v.variant_id ? v.quantity : 0} disabled title="Nhân viên nhập hàng tại trang Tồn kho chi nhánh"
                           onChange={e => setVariantField(idx, 'quantity', e.target.value)}
                           className="w-20 py-1.5 px-2 rounded border border-border bg-background outline-none focus:border-primary text-xs" />
                       </td>
@@ -813,10 +814,10 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
               </table>
             </div>
             <p className="text-xs text-muted-foreground">
-              * Kho tổng (Chi nhánh ID=1) sẽ nhận số lượng tồn kho ban đầu này.
-              Có thể điều chỉnh từng kho sau khi tạo xong.
+              Sản phẩm mới chưa có hàng. Nhân viên dùng nút Nhập hàng tại Tồn kho chi nhánh để nhập về chi nhánh của mình.
             </p>
           </section>
+          </fieldset>
         </form>
       </div>
 
@@ -826,11 +827,11 @@ const ProductForm = ({ onClose, onSuccess, editProduct = null }) => {
           className="px-5 py-2.5 text-sm font-bold text-muted-foreground hover:bg-muted rounded-lg transition-colors">
           Hủy
         </button>
-        <button type="submit" form="productForm" disabled={isLoading || images.some(i => i.uploading)}
+        {!readOnly && <button type="submit" form="productForm" disabled={isLoading || images.some(i => i.uploading)}
           className="bg-primary text-primary-foreground px-7 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 shadow-lg shadow-primary/20">
           {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {isEditMode ? 'Lưu thay đổi' : 'Tạo sản phẩm'}
-        </button>
+        </button>}
       </div>
       </motion.div>
 

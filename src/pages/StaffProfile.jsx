@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, Lock, Loader2, CheckCircle2, AlertCircle, MapPin } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import axiosClient from '../api/axiosClient';
 
 const StaffProfile = () => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState(null);
@@ -16,15 +16,11 @@ const StaffProfile = () => {
   const [profileSaving, setProfileSaving] = useState(false);
 
   // Password form
-  const [passForm, setPassForm] = useState({ newPassword: '', confirmPassword: '' });
+  const [passForm, setPassForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passMsg, setPassMsg] = useState({ type: '', text: '' });
   const [passSaving, setPassSaving] = useState(false);
 
-  useEffect(() => {
-    fetchProfile();
-  }, []);
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       const res = await axiosClient.get('/accounts/me');
       if (res?.success) {
@@ -39,7 +35,11 @@ const StaffProfile = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchProfile();
+  }, [fetchProfile]);
 
   const handleSaveProfile = async (e) => {
     e.preventDefault();
@@ -71,8 +71,8 @@ const StaffProfile = () => {
     e.preventDefault();
     setPassMsg({ type: '', text: '' });
 
-    if (passForm.newPassword.length < 6) {
-      setPassMsg({ type: 'error', text: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+    if (passForm.newPassword.length < 8 || new TextEncoder().encode(passForm.newPassword).length > 72) {
+      setPassMsg({ type: 'error', text: 'Mật khẩu mới cần từ 8 ký tự và không quá 72 byte' });
       return;
     }
     if (passForm.newPassword !== passForm.confirmPassword) {
@@ -84,11 +84,13 @@ const StaffProfile = () => {
       const res = await axiosClient.put('/accounts/me', {
         full_name: profileForm.full_name,
         phone: profileForm.phone,
-        password: passForm.newPassword
+        password: passForm.newPassword,
+        current_password: passForm.currentPassword
       });
       if (res?.success) {
         setPassMsg({ type: 'success', text: 'Đổi mật khẩu thành công!' });
-        setPassForm({ newPassword: '', confirmPassword: '' });
+        setPassForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        logout();
       } else {
         setPassMsg({ type: 'error', text: res?.message || 'Lỗi' });
       }
@@ -180,7 +182,7 @@ const StaffProfile = () => {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block ml-1">Họ và tên *</label>
-                        <input type="text" value={profileForm.full_name} onChange={e => setProfileForm(p => ({...p, full_name: e.target.value}))} required className={INPUT_CLS} />
+                        <input type="text" minLength={2} maxLength={150} value={profileForm.full_name} onChange={e => setProfileForm(p => ({...p, full_name: e.target.value}))} required className={INPUT_CLS} />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block ml-1">Email</label>
@@ -188,7 +190,7 @@ const StaffProfile = () => {
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block ml-1">Số điện thoại</label>
-                        <input type="tel" value={profileForm.phone} onChange={e => setProfileForm(p => ({...p, phone: e.target.value}))} className={INPUT_CLS} />
+                        <input type="tel" maxLength={20} pattern="(0[0-9]{9}|[+]84[0-9]{9})" value={profileForm.phone} onChange={e => setProfileForm(p => ({...p, phone: e.target.value}))} className={INPUT_CLS} />
                       </div>
                     </div>
 
@@ -218,15 +220,18 @@ const StaffProfile = () => {
                   )}
 
                   <form onSubmit={handleChangePassword} className="space-y-5 max-w-md">
+                    <label className="block text-sm">Mật khẩu hiện tại *
+                      <input type="password" autoComplete="current-password" required value={passForm.currentPassword} onChange={e => setPassForm(p => ({ ...p, currentPassword: e.target.value }))} className={INPUT_CLS} />
+                    </label>
                     <div className="space-y-1.5">
                       <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider block ml-1">Mật khẩu mới *</label>
                       <input
                         type="password"
                         value={passForm.newPassword}
                         onChange={e => setPassForm(p => ({...p, newPassword: e.target.value}))}
-                        required minLength={6}
+                        required minLength={8}
                         className={INPUT_CLS}
-                        placeholder="Nhập ít nhất 6 ký tự"
+                        placeholder="Từ 8 ký tự, tối đa 72 byte"
                       />
                     </div>
                     <div className="space-y-1.5">

@@ -1,16 +1,24 @@
+import TableHeading from '../components/shared/TableHeading';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import ProductImage from '../components/shared/ProductImage';
+import ModalLayer from '../components/shared/ModalLayer';
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Package, Search, Plus, Edit2, ShieldAlert, Eye, Lock, Unlock, Loader2, Image as ImageIcon, Trash2, ExternalLink } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { Package, Search, Plus, Edit2, Eye, Lock, Unlock, Loader2, Trash2, ExternalLink } from 'lucide-react';
 import productApi from '../api/productApi';
 import { toast } from 'sonner';
 import ProductForm from '../components/admin/ProductForm';
 import { useAuth } from '../context/AuthContext';
+import { useLocation } from 'react-router-dom';
 
 const ProductsList = () => {
-  const { role } = useAuth();
+  const { can } = useAuth();
+  const location = useLocation();
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  useEffect(() => { setSearchTerm(new URLSearchParams(location.search).get('search') || ''); }, [location.search]);
   
   // Drawer/Modal State
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -49,7 +57,7 @@ const ProductsList = () => {
   };
 
   const handleDelete = async (id, name) => {
-    if (window.confirm(`CẢNH BÁO: Xóa sản phẩm "${name}" sẽ xóa TOÀN BỘ biến thể, hình ảnh và tồn kho liên quan. Bạn có chắc chắn?`)) {
+    if (window.confirm(`Xóa vĩnh viễn "${name}" cùng biến thể, hình ảnh, tồn kho và mục giỏ hàng/yêu thích liên quan? Sản phẩm đã có lịch sử đơn hàng/đánh giá/đổi trả sẽ không được xóa; hãy dùng Ngừng bán.`)) {
       try {
         const res = await productApi.delete(id);
         if (res && res.success) {
@@ -59,7 +67,8 @@ const ProductsList = () => {
           toast.error(res?.message || 'Có lỗi xảy ra khi xóa');
         }
       } catch (error) {
-        toast.error(error.message || 'Lỗi kết nối');
+        const canDeactivate = error.response?.data?.data?.can_deactivate && products.some(product => product.product_id === id && product.is_active);
+        toast.error(error.message || 'Lỗi kết nối', { duration: 8000, ...(canDeactivate ? { action: { label: 'Ngừng bán', onClick: () => handleToggleStatus(id, true) } } : {}) });
       }
     }
   };
@@ -81,14 +90,16 @@ const ProductsList = () => {
 
   // Staff: được thêm/sửa sản phẩm (nhập kho)
   // Admin: chỉ xem, bật/tắt trạng thái, xóa
-  const canAddEdit = role === 'staff';
+  const canAddEdit = can('products.manage');
+
+  const listPage = useListPagination(filteredProducts, searchTerm);
 
   return (
-    <div className="p-8 space-y-8 min-h-screen bg-background/50 relative">
+    <div className="p-1 sm:p-4 lg:p-6 space-y-5 sm:space-y-8 min-h-screen bg-background/50 relative">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">
             <Package className="w-8 h-8 text-primary" />
             {canAddEdit ? 'Nhập kho / Sản phẩm' : 'Quản lý Sản phẩm'}
           </h1>
@@ -125,8 +136,9 @@ const ProductsList = () => {
 
       {/* Bảng dữ liệu */}
       <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <TableHeading title={"S\u1ea3n ph\u1ea9m"} count={filteredProducts.length} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table table-with-actions w-full text-left border-collapse">
             <thead>
               <tr className="bg-muted/50 border-b border-border/50">
                 <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground w-16">Ảnh</th>
@@ -153,24 +165,14 @@ const ProductsList = () => {
                   </td>
                 </tr>
               ) : (
-                filteredProducts.map((p) => (
+                listPage.items.map((p) => (
                   <tr key={p.product_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors group">
                     <td className="p-4">
-                      {p.primary_image ? (
-                        <img 
+                        <ProductImage
                           src={p.primary_image} 
                           alt={p.product_name} 
                           className="w-12 h-12 object-cover rounded-lg border border-border/50" 
-                          onError={(e) => { 
-                            e.currentTarget.onerror = null; 
-                            e.currentTarget.src = 'https://placehold.co/48x48/png?text=Loi'; 
-                          }} 
                         />
-                      ) : (
-                        <div className="w-12 h-12 bg-muted rounded-lg border border-border/50 flex items-center justify-center text-muted-foreground">
-                          <ImageIcon className="w-5 h-5" />
-                        </div>
-                      )}
                     </td>
                     <td className="p-4">
                       <div className="font-bold text-foreground line-clamp-2 max-w-[300px]">{p.product_name}</div>
@@ -203,7 +205,7 @@ const ProductsList = () => {
                       </span>
                     </td>
                     <td className="p-4 text-right">
-                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex justify-end gap-2">
                         {/* Staff: Sửa / cập nhật tồn kho */}
                         {canAddEdit ? (
                           <button 
@@ -226,7 +228,7 @@ const ProductsList = () => {
                           className="p-2 text-purple-500 hover:bg-purple-500/10 rounded-lg transition-colors" title="Xem trên web">
                           <ExternalLink className="w-4 h-4" />
                         </a>
-                        <button 
+                        {canAddEdit && <button 
                           onClick={() => handleToggleStatus(p.product_id, p.is_active)}
                           className={`p-2 rounded-lg transition-colors ${
                             p.is_active ? 'text-orange-500 hover:bg-orange-500/10' : 'text-green-500 hover:bg-green-500/10'
@@ -234,12 +236,12 @@ const ProductsList = () => {
                           title={p.is_active ? 'Ngừng bán' : 'Mở bán'}
                         >
                           {p.is_active ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
-                        </button>
-                        <button 
+                        </button>}
+                        {canAddEdit && <button 
                           onClick={() => handleDelete(p.product_id, p.product_name)}
                           className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors" title="Xóa vĩnh viễn">
                           <Trash2 className="w-4 h-4" />
-                        </button>
+                        </button>}
                       </div>
                     </td>
                   </tr>
@@ -248,12 +250,13 @@ const ProductsList = () => {
             </tbody>
           </table>
         </div>
-      </div>
+        {!isLoading && <div className="admin-table-footer"><Pagination {...listPage.paginationProps} /></div>}
+      </div> 
 
       {/* Full-screen overlay cho Product Form */}
       <AnimatePresence>
         {isFormOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 md:p-8">
+          <ModalLayer onClose={handleCloseForm} label="Sản phẩm"><div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 md:p-8">
             <div className="w-full max-w-6xl w-full">
               <ProductForm 
                 editProduct={editProduct}
@@ -265,7 +268,7 @@ const ProductsList = () => {
                 readOnly={!canAddEdit}
               />
             </div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
     </div>

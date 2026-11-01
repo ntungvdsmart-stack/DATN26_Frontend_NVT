@@ -1,41 +1,17 @@
+import TableHeading from '../components/shared/TableHeading';
+import ModalLayer from '../components/shared/ModalLayer';
+import Pagination from '../components/shared/Pagination';
 import React, { useState, useEffect } from 'react';
 import orderApi from '../api/orderApi';
-import { Search, Eye, Filter, ArrowRight, Truck, Package, CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Eye, ArrowRight, Truck, Package, CreditCard, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 
 const PAGE_SIZE = 8;
 
-const Pagination = ({ page, totalPages, onChange }) => (
-  <div className="flex items-center justify-center gap-2 mt-6">
-    <button
-      onClick={() => onChange(Math.max(1, page - 1))}
-      disabled={page === 1}
-      className="w-9 h-9 flex items-center justify-center border border-border rounded-full disabled:opacity-30 hover:bg-muted transition-colors"
-    >
-      <ChevronLeft size={15} />
-    </button>
-    {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-      <button
-        key={p}
-        onClick={() => onChange(p)}
-        className={cn(
-          'w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold transition-all',
-          p === page ? 'bg-foreground text-background' : 'border border-border hover:bg-muted'
-        )}
-      >
-        {p}
-      </button>
-    ))}
-    <button
-      onClick={() => onChange(Math.min(totalPages, page + 1))}
-      disabled={page === totalPages}
-      className="w-9 h-9 flex items-center justify-center border border-border rounded-full disabled:opacity-30 hover:bg-muted transition-colors"
-    >
-      <ChevronRight size={15} />
-    </button>
-  </div>
-);
+
 
 const statusColors = {
   'Đã giao':       'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
@@ -51,31 +27,36 @@ const OnlineSales = () => {
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('Tất cả');
-
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  const fetchOrders = async () => {
-    setIsLoading(true);
-    try {
-      const res = await orderApi.getAllOrders();
-      if (res && res.success) {
-        setOnlineOrders(res.data.filter(o => o.channel?.toLowerCase() === 'online'));
-      }
-    } catch (err) {
-      console.error(err);
-    }
-    setIsLoading(false);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [counts, setCounts] = useState({});
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const openDetails = async id => {
+    setDetailLoading(true);
+    try { setSelectedOrder((await orderApi.getOrderById(id)).data); }
+    catch (error) { toast.error(error.message); }
+    finally { setDetailLoading(false); }
   };
 
-  const tabs = ['Tất cả', 'pending', 'processing', 'shipping', 'completed'];
+  useEffect(() => {
+    let active = true;
+    setIsLoading(true);
+    const timer = setTimeout(() => {
+      orderApi.getAllOrders({ channel: 'online', page, limit: PAGE_SIZE, search, status: filter === 'Tất cả' ? undefined : filter }).then(res => {
+        if (active) { setOnlineOrders(res.data.items || []); setPagination(res.data.pagination); if (page > Math.max(1, res.data.pagination.totalPages)) setPage(Math.max(1, res.data.pagination.totalPages)); setCounts(res.data.counts || {}); }
+      }).catch(error => { if (active) toast.error(error.message); }).finally(() => { if (active) setIsLoading(false); });
+    }, 200);
+    return () => { active = false; clearTimeout(timer); };
+  }, [page, filter, search]);
+
+  const tabs = ['Tất cả', 'pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled', 'returned'];
   const tabLabels = {
     'Tất cả': 'Tất cả',
     'pending': 'Chờ xác nhận',
     'processing': 'Đang xử lý',
     'shipping': 'Đang giao',
     'completed': 'Hoàn tất'
+    , confirmed: 'Đã xác nhận', cancelled: 'Đã hủy', returned: 'Đổi/trả'
   };
   const STATUS_LABELS = {
     pending: 'Chờ xác nhận', confirmed: 'Đã xác nhận', processing: 'Đang xử lý',
@@ -90,8 +71,8 @@ const OnlineSales = () => {
     return matchSearch && matchFilter;
   });
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const totalPages = pagination.totalPages || 1;
+  const paginated = filtered;
 
   return (
     <div className="space-y-6 pb-10">
@@ -101,8 +82,8 @@ const OnlineSales = () => {
           <p className="text-muted-foreground text-sm mt-1">Quản lý và xử lý đơn hàng từ Website</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm font-semibold hover:bg-muted transition-colors">
-            <Truck size={16} /> Đối tác giao hàng
+          <button onClick={() => { setFilter('shipping'); setPage(1); }} className="flex items-center gap-2 px-4 py-2 bg-card border border-border rounded-lg text-sm font-semibold hover:bg-muted transition-colors">
+            <Truck size={16} /> Theo dõi giao hàng
           </button>
         </div>
       </div>
@@ -114,28 +95,28 @@ const OnlineSales = () => {
             <Package size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Chờ xác nhận</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'pending').length}</p>
+          <p className="text-2xl font-black">{(counts.pending || 0)}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-3 mb-2 text-amber-500">
             <CreditCard size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Đang xử lý</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'processing').length}</p>
+          <p className="text-2xl font-black">{(counts.processing || 0)}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-3 mb-2 text-blue-500">
             <Truck size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Đang giao</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'shipping').length}</p>
+          <p className="text-2xl font-black">{(counts.shipping || 0)}</p>
         </div>
         <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
           <div className="flex items-center gap-3 mb-2 text-emerald-500">
             <ArrowRight size={18} />
             <span className="text-xs font-bold uppercase tracking-wider">Hoàn tất</span>
           </div>
-          <p className="text-2xl font-black">{onlineOrders.filter(o => o.order_status === 'completed').length}</p>
+          <p className="text-2xl font-black">{(counts.completed || 0)}</p>
         </div>
       </div>
 
@@ -170,8 +151,9 @@ const OnlineSales = () => {
 
       {/* Orders List */}
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+        <TableHeading title={"Danh s\u00e1ch \u0111\u01a1n online"} count={pagination.total} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table table-with-actions w-full text-sm min-w-[800px]">
             <thead className="bg-muted/30 border-b border-border">
               <tr>
                 <th className="text-left px-5 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Đơn hàng</th>
@@ -214,7 +196,7 @@ const OnlineSales = () => {
                       </span>
                     </td>
                     <td className="px-5 py-4 text-right">
-                      <button className="px-3 py-1.5 text-xs font-semibold border border-border rounded-md hover:bg-muted transition-colors opacity-0 group-hover:opacity-100 flex items-center gap-1.5 ml-auto">
+                      <button disabled={detailLoading} onClick={() => openDetails(order.order_id)} className="px-3 py-1.5 text-xs font-semibold border border-border rounded-md hover:bg-muted transition-colors flex items-center gap-1.5 ml-auto">
                         <Eye size={14} /> Chi tiết
                       </button>
                     </td>
@@ -234,10 +216,11 @@ const OnlineSales = () => {
         <>
           <Pagination page={page} totalPages={totalPages} onChange={setPage} />
           <p className="text-center text-xs text-muted-foreground mt-3">
-            Trang {page} / {totalPages} · Hiển thị {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} trong {filtered.length} đơn
+            Trang {page} / {totalPages} · Hiển thị {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, pagination.total)} trong {pagination.total} đơn
           </p>
         </>
       )}
+      {selectedOrder && <ModalLayer onClose={() => setSelectedOrder(null)}><div role="dialog" aria-modal="true" aria-label="Chi tiết đơn online" className="fixed inset-0 z-50 bg-black/60 grid place-items-center p-4"><section className="w-full max-w-xl max-h-[85dvh] overflow-y-auto rounded-2xl bg-background p-5 space-y-4"><div className="flex justify-between gap-3"><h2 className="font-bold text-lg">{selectedOrder.order_code}</h2><button aria-label="Đóng chi tiết" onClick={() => setSelectedOrder(null)}><X /></button></div><p>{selectedOrder.customer_name} • {selectedOrder.customer_phone}</p><p className="text-sm">{selectedOrder.shipping_address_snapshot}</p><p>{STATUS_LABELS[selectedOrder.order_status]} • {Number(selectedOrder.total_amount).toLocaleString('vi-VN')}đ</p><div className="divide-y divide-border">{selectedOrder.items.map(item => <div key={item.order_item_id} className="py-3 flex justify-between gap-3"><span>{item.product_name} — {item.size_value} {item.color_name}</span><span>×{item.quantity}</span></div>)}</div><Link to={`/orders?search=${encodeURIComponent(selectedOrder.order_code)}`} className="inline-block rounded-lg bg-primary text-primary-foreground px-4 py-2">Xử lý đơn hàng</Link></section></div></ModalLayer>}
     </div>
   );
 };

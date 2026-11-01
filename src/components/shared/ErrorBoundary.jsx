@@ -6,7 +6,7 @@ class ErrorBoundary extends React.Component {
     this.state = { hasError: false, error: null, errorInfo: null };
   }
 
-  static getDerivedStateFromError(error) {
+  static getDerivedStateFromError() {
     return { hasError: true };
   }
 
@@ -18,14 +18,10 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: 20, background: '#fdd', color: 'red', minHeight: '100vh', zIndex: 9999, position: 'relative' }}>
-          <h2>Something went wrong in the component.</h2>
-          <details style={{ whiteSpace: 'pre-wrap', marginTop: 20, background: '#fff', padding: 10, color: '#000' }}>
-            <summary>Click for error details</summary>
-            {this.state.error && this.state.error.toString()}
-            <br />
-            {this.state.errorInfo && this.state.errorInfo.componentStack}
-          </details>
+        <div role="alert" className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background text-foreground px-4 text-center">
+          <h1 className="text-xl font-bold">Đã xảy ra lỗi khi hiển thị trang</h1>
+          <p className="text-muted-foreground">Bạn có thể tải lại trang hoặc quay về trang chính để tiếp tục.</p>
+          <div className="flex flex-wrap gap-3"><button onClick={() => window.location.reload()} className="rounded-xl bg-primary text-primary-foreground px-5 py-3">Tải lại trang</button><a href="/" className="rounded-xl border border-border px-5 py-3">Về trang chính</a></div>
         </div>
       );
     }

@@ -1,8 +1,10 @@
 import axiosClient from './axiosClient';
 
 const reviewApi = {
-  getProductReviews: (productId) => {
-    return axiosClient.get(`/reviews/products/${productId}`);
+  updateReview: (id, data) => axiosClient.put(`/reviews/${id}`, data),
+  deleteReview: (id) => axiosClient.delete(`/reviews/${id}`),
+  getProductReviews: (productId, page = 1) => {
+    return axiosClient.get(`/reviews/products/${productId}`, { params: { page } });
   },
   checkCanReview: (productId) => {
     return axiosClient.get(`/reviews/products/${productId}/can-review`);

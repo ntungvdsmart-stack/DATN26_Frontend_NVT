@@ -1,240 +1,96 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Store, Shield, CreditCard, Mail, Bell, Globe, Save, Loader2 } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { useCallback, useEffect, useState } from 'react';
+import { Store, CreditCard, Mail, Save, Loader2 } from 'lucide-react';
+import EmailSettings from '../components/admin/EmailSettings';
 import configApi from '../api/configApi';
+import axiosClient from '../api/axiosClient';
 import { toast } from 'sonner';
 
-const SystemConfig = () => {
-  const [activeTab, setActiveTab] = useState('general');
-  const [isSaving, setIsSaving] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [settings, setSettings] = useState({
-    store_name: '',
-    store_phone: '',
-    store_email: '',
-    store_address: '',
-    tax_rate: '10',
-    shipping_fee: '30000',
-    free_shipping_threshold: '500000',
-    hero_subtitle: 'BỘ SƯU TẬP MỚI — THU ĐÔNG 2026'
-  });
-
-  useEffect(() => {
-    const fetchSettings = async () => {
-      setIsLoading(true);
-      try {
-        const res = await configApi.getSettings();
-        if (res && res.success && res.data) {
-          setSettings(prev => ({ ...prev, ...res.data }));
-        }
-      } catch (error) {
-        console.error('Failed to fetch settings', error);
-      }
-      setIsLoading(false);
-    };
-    fetchSettings();
-  }, []);
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      const res = await configApi.updateSettings(settings);
-      if (res && res.success) {
-        toast.success('Đã lưu cấu hình thành công!');
-      } else {
-        toast.error(res?.message || 'Có lỗi xảy ra khi lưu cấu hình');
-      }
-    } catch (error) {
-      toast.error('Có lỗi xảy ra khi lưu cấu hình');
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setSettings(prev => ({ ...prev, [name]: value }));
-  };
-
-  const tabs = [
-    { id: 'general', icon: Store, label: 'Thông tin chung' },
-    { id: 'payment', icon: CreditCard, label: 'Thanh toán & Thuế' },
-    { id: 'email', icon: Mail, label: 'Email & SMS' },
-    { id: 'security', icon: Shield, label: 'Bảo mật' },
-    { id: 'localization', icon: Globe, label: 'Khu vực & Ngôn ngữ' },
-    { id: 'notifications', icon: Bell, label: 'Thông báo' },
-  ];
-
-  return (
-    <div className="space-y-6 pb-10">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Cài đặt hệ thống</h1>
-          <p className="text-muted-foreground text-sm mt-1">Cấu hình toàn cầu cho FashionOS</p>
-        </div>
-        <button 
-          onClick={handleSave}
-          className="flex items-center justify-center gap-2 px-6 py-2 bg-foreground text-background rounded-lg text-sm font-bold hover:bg-foreground/90 transition-all w-full sm:w-auto"
-        >
-          {isSaving ? (
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}>
-              <Settings size={16} />
-            </motion.div>
-          ) : (
-            <Save size={16} />
-          )}
-          {isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}
-        </button>
-      </div>
-
-      <div className="flex flex-col lg:flex-row gap-8">
-        {/* Sidebar */}
-        <div className="w-full lg:w-64 flex-shrink-0">
-          <div className="flex flex-row lg:flex-col gap-1 overflow-x-auto scrollbar-none pb-2 lg:pb-0">
-            {tabs.map(tab => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={cn(
-                    'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap',
-                    isActive ? 'bg-foreground text-background shadow-sm' : 'hover:bg-muted text-muted-foreground'
-                  )}
-                >
-                  <Icon size={18} />
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 bg-card border border-border rounded-2xl p-6 md:p-8 shadow-sm min-h-[500px]">
-          <AnimatePresence mode="wait">
-            {activeTab === 'general' && (
-              <motion.div key="general" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="space-y-8">
-                <div>
-                  <h3 className="text-lg font-bold mb-4">Thông tin cửa hàng</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Tên cửa hàng</label>
-                      <input type="text" name="store_name" value={settings.store_name || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Hotline</label>
-                      <input type="text" name="store_phone" value={settings.store_phone || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Email liên hệ</label>
-                      <input type="email" name="store_email" value={settings.store_email || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Địa chỉ trụ sở</label>
-                      <input type="text" name="store_address" value={settings.store_address || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-6 border-t border-border">
-                  <h3 className="text-lg font-bold mb-4">Mạng xã hội</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Facebook URL</label>
-                      <input type="text" defaultValue="https://facebook.com/fashionos" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Instagram URL</label>
-                      <input type="text" defaultValue="https://instagram.com/fashionos" className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                  </div>
-                </div>
-                <div className="pt-6 border-t border-border">
-                  <h3 className="text-lg font-bold mb-4">Cấu hình Vận chuyển & Giao diện</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Phí ship (VNĐ)</label>
-                      <input type="number" name="shipping_fee" value={settings.shipping_fee || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Mức freeship (VNĐ)</label>
-                      <input type="number" name="free_shipping_threshold" value={settings.free_shipping_threshold || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Phụ đề Banner Trang chủ (Hero Subtitle)</label>
-                      <input type="text" name="hero_subtitle" value={settings.hero_subtitle || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {activeTab === 'payment' && (
-              <motion.div key="payment" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="space-y-8">
-                <div>
-                  <h3 className="text-lg font-bold mb-4">Cổng thanh toán</h3>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 border border-border rounded-xl bg-background">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-8 bg-blue-500 rounded flex items-center justify-center text-white text-[10px] font-bold">VNPAY</div>
-                        <div>
-                          <p className="font-bold text-sm">VNPay Gateway</p>
-                          <p className="text-xs text-muted-foreground">Thanh toán qua thẻ ATM, Visa, MasterCard</p>
-                        </div>
-                      </div>
-                      <div className="w-10 h-6 bg-emerald-500 rounded-full flex items-center p-1 cursor-pointer">
-                        <div className="w-4 h-4 bg-white rounded-full translate-x-4 shadow-sm" />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between p-4 border border-border rounded-xl bg-background">
-                      <div className="flex items-center gap-3">
-                        <div className="w-12 h-8 bg-pink-500 rounded flex items-center justify-center text-white text-[10px] font-bold">MOMO</div>
-                        <div>
-                          <p className="font-bold text-sm">Ví MoMo</p>
-                          <p className="text-xs text-muted-foreground">Thanh toán qua ví điện tử MoMo</p>
-                        </div>
-                      </div>
-                      <div className="w-10 h-6 bg-emerald-500 rounded-full flex items-center p-1 cursor-pointer">
-                        <div className="w-4 h-4 bg-white rounded-full translate-x-4 shadow-sm" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="pt-6 border-t border-border">
-                  <h3 className="text-lg font-bold mb-4">Cấu hình Thuế (VAT)</h3>
-                  <div className="flex items-center justify-between p-4 border border-border rounded-xl bg-background mb-4">
-                    <div>
-                      <p className="font-bold text-sm">Bao gồm thuế trong giá sản phẩm</p>
-                      <p className="text-xs text-muted-foreground">Tính giá đã bao gồm VAT trên toàn hệ thống</p>
-                    </div>
-                    <div className="w-10 h-6 bg-emerald-500 rounded-full flex items-center p-1 cursor-pointer">
-                      <div className="w-4 h-4 bg-white rounded-full translate-x-4 shadow-sm" />
-                    </div>
-                  </div>
-                  <div className="space-y-2 max-w-xs">
-                    <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Phần trăm thuế (%)</label>
-                    <input type="number" name="tax_rate" value={settings.tax_rate || ''} onChange={handleChange} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg text-sm outline-none focus:border-primary transition-colors" />
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Other tabs placeholder */}
-            {['email', 'security', 'localization', 'notifications'].includes(activeTab) && (
-              <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="flex flex-col items-center justify-center h-full min-h-[400px] text-center text-muted-foreground">
-                <Settings size={48} className="mb-4 opacity-20" />
-                <h3 className="text-lg font-bold text-foreground mb-2">Đang phát triển module này</h3>
-                <p className="text-sm max-w-sm">Các cấu hình này đang được bộ phận kỹ thuật hoàn thiện và sẽ cập nhật trong phiên bản tiếp theo.</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </div>
-    </div>
-  );
+const defaults = {
+  store_name: '', store_phone: '', store_email: '', store_address: '', store_logo_url: '',
+  shipping_fee: '30000', free_shipping_threshold: '500000',
+  bank_bin: '', bank_account_number: '', bank_account_name: ''
 };
+const tabs = [
+  { id: 'general', icon: Store, label: 'Cửa hàng & giao hàng' },
+  { id: 'payment', icon: CreditCard, label: 'Thanh toán' },
+  { id: 'email', icon: Mail, label: 'Email' }
+];
+const fieldClass = 'mt-2 block w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:border-primary';
 
-export default SystemConfig;
+export default function SystemConfig() {
+  const [activeTab, setActiveTab] = useState('general');
+  const [settings, setSettings] = useState(defaults);
+  const [saved, setSaved] = useState(defaults);
+  const [integrations, setIntegrations] = useState({ payments: {} });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [integrationError, setIntegrationError] = useState(false);
+  const load = useCallback(async () => {
+    setLoading(true); setLoadError(''); setIntegrationError(false);
+    const [config, services] = await Promise.allSettled([configApi.getSettings(), axiosClient.get('/config/integrations')]);
+    if (config.status === 'fulfilled' && config.value.success) {
+      const data = Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => [key, String(config.value.data?.[key] ?? fallback)]));
+      setSettings(data); setSaved(data);
+    } else setLoadError('Không tải được cấu hình cửa hàng. Vui lòng thử lại trước khi chỉnh sửa.');
+    if (services.status === 'fulfilled') setIntegrations(services.value.data);
+    else setIntegrationError(true);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const dirty = JSON.stringify(settings) !== JSON.stringify(saved);
+  const change = event => { setSaveError(''); setSettings(current => ({ ...current, [event.target.name]: event.target.value })); };
+  const save = async () => {
+    if (saving || loading || loadError || !dirty) return;
+    if (!document.getElementById('settings-fields')?.reportValidity() && activeTab !== 'email') return;
+    if (!settings.store_name.trim()) { setSaveError('Vui lòng nhập tên cửa hàng trong mục Cửa hàng & giao hàng.'); return; }
+    const bankFields = [settings.bank_bin, settings.bank_account_number, settings.bank_account_name];
+    const bankChanged = ['bank_bin', 'bank_account_number', 'bank_account_name'].some(key => settings[key] !== saved[key]);
+    if (bankChanged && bankFields.some(value => value.trim()) && bankFields.some(value => !value.trim())) { setSaveError('Vui lòng điền đủ ngân hàng, số tài khoản và tên chủ tài khoản trong mục Thanh toán.'); return; }
+    setSaving(true); setSaveError('');
+    const payload = Object.fromEntries(Object.keys(defaults).map(key => [key, String(settings[key] ?? '').trim()]));
+    try {
+      const result = await configApi.updateSettings(payload);
+      if (!result.success) throw new Error(result.message || 'Không lưu được cấu hình');
+      setSettings(payload); setSaved(payload);
+      toast.success('Đã lưu cấu hình cửa hàng');
+    } catch (error) {
+      setSaveError(error.response?.data?.message || error.message || 'Không lưu được cấu hình');
+    } finally { setSaving(false); }
+  };
+  return <div className="space-y-6 pb-10">
+    <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div><h1 className="text-2xl font-bold">Cài đặt hệ thống</h1><p className="mt-1 text-sm text-muted-foreground">Thông tin cửa hàng, giao hàng, thanh toán và email.</p></div>
+      <button type="button" onClick={save} disabled={saving || loading || !!loadError || !dirty} className="flex items-center justify-center gap-2 rounded-xl bg-foreground text-background px-5 py-3 text-sm font-bold disabled:opacity-40">{saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}{saving ? 'Đang lưu...' : 'Lưu thay đổi'}</button>
+    </header>
+    {saveError && <p role="alert" className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-600">{saveError}</p>}
+    {dirty && <p role="status" className="text-sm text-muted-foreground">Bạn có thay đổi chưa lưu.</p>}
+    {loading ? <div role="status" className="flex items-center justify-center gap-2 py-16"><Loader2 className="animate-spin" size={20} />Đang tải cấu hình...</div> : loadError ? <div role="alert" className="rounded-xl border p-5"><p>{loadError}</p><button onClick={load} className="mt-3 rounded-lg border px-4 py-2">Tải lại</button></div> : <>
+      <nav aria-label="Nhóm cài đặt" className="flex flex-wrap gap-2">{tabs.map(({ id, icon: Icon, label }) => <button key={id} type="button" aria-pressed={activeTab === id} onClick={() => setActiveTab(id)} className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${activeTab === id ? 'bg-foreground text-background' : 'border border-border hover:bg-muted'}`}><Icon size={18} />{label}</button>)}</nav>
+      <section className="min-w-0 rounded-2xl border border-border bg-card p-4 sm:p-6">
+        {activeTab === 'general' && <form id="settings-fields" onSubmit={event => { event.preventDefault(); save(); }} className="space-y-8">
+          <section><h2 className="font-bold text-lg mb-4">Thông tin cửa hàng</h2><div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <label className="text-sm font-medium">Tên cửa hàng *<input required maxLength={150} name="store_name" value={settings.store_name} onChange={change} className={fieldClass} /></label>
+            <label className="text-sm font-medium">Số điện thoại hỗ trợ<input type="tel" maxLength={20} name="store_phone" value={settings.store_phone} onChange={change} className={fieldClass} /></label>
+            <label className="text-sm font-medium">Email hỗ trợ<input type="email" maxLength={254} name="store_email" value={settings.store_email} onChange={change} className={fieldClass} /></label>
+            <label className="text-sm font-medium">Địa chỉ cửa hàng<input maxLength={255} name="store_address" value={settings.store_address} onChange={change} className={fieldClass} /></label>
+          </div><p className="text-xs text-muted-foreground mt-3">Thông tin này được dùng trong email, hóa đơn và hỗ trợ khách hàng.</p></section>
+          <section className="border-t border-border pt-6"><h2 className="font-bold text-lg mb-4">Phí giao hàng</h2><div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <label className="text-sm font-medium">Phí giao hàng (VNĐ)<input required type="number" min="0" max="9999999999" step="1" name="shipping_fee" value={settings.shipping_fee} onChange={change} className={fieldClass} /></label>
+            <label className="text-sm font-medium">Giá trị đơn được miễn phí giao hàng (VNĐ)<input required type="number" min="0" max="9999999999" step="1" name="free_shipping_threshold" value={settings.free_shipping_threshold} onChange={change} className={fieldClass} /></label>
+          </div></section>
+        </form>}
+        {activeTab === 'payment' && <form id="settings-fields" onSubmit={event => { event.preventDefault(); save(); }} className="space-y-7">
+          <section><h2 className="text-lg font-bold mb-4">Cổng thanh toán online</h2>{integrationError ? <p role="alert" className="text-sm text-muted-foreground">Chưa tải được trạng thái cấu hình dịch vụ. Tải lại trang để kiểm tra.</p> : <div className="grid sm:grid-cols-3 gap-3">{[['vnpay', 'VNPay'], ['momo', 'MoMo'], ['stripe', 'Stripe']].map(([key, label]) => <div key={key} className="rounded-xl border border-border p-4"><p className="font-bold">{label}</p><p className={`mt-1 text-sm ${integrations.payments[key] ? 'text-emerald-600' : 'text-muted-foreground'}`}>{integrations.payments[key] ? 'Đã cấu hình' : 'Chưa cấu hình'}</p></div>)}</div>}</section>
+          <section className="border-t border-border pt-6"><h2 className="text-lg font-bold mb-4">Tài khoản nhận VietQR tại quầy</h2><div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <label className="text-sm font-medium">Mã BIN ngân hàng<input name="bank_bin" inputMode="numeric" pattern="[0-9]{6}" maxLength={6} placeholder="6 chữ số" value={settings.bank_bin} onChange={change} className={fieldClass} /></label>
+            <label className="text-sm font-medium">Số tài khoản<input name="bank_account_number" pattern="[A-Za-z0-9]{4,30}" maxLength={30} value={settings.bank_account_number} onChange={change} className={fieldClass} /></label>
+            <label className="text-sm font-medium sm:col-span-2">Tên chủ tài khoản<input name="bank_account_name" maxLength={100} value={settings.bank_account_name} onChange={change} className={fieldClass} /></label>
+          </div><p className="text-sm text-muted-foreground mt-3">Mã QR tại POS dùng số tiền của đơn. Thu ngân kiểm tra tiền thực nhận trước khi xác nhận.</p></section>
+        </form>}
+        {activeTab === 'email' && <EmailSettings settings={settings} setSettings={setSettings} status={integrations.email_status} onEditStore={() => setActiveTab('general')} />}
+      </section>
+    </>}
+  </div>;
+}

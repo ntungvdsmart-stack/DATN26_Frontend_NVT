@@ -1,12 +1,16 @@
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import ModalLayer from '../components/shared/ModalLayer';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Plus, Edit2, Trash2, CheckCircle2, XCircle, Search, HelpCircle, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, XCircle, Search, HelpCircle, Loader2 } from 'lucide-react';
 import faqApi from '../api/faqApi';
 import { toast } from 'sonner';
 
 const FaqManagement = () => {
   const [faqs, setFaqs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Modal
@@ -20,7 +24,7 @@ const FaqManagement = () => {
     try {
       const res = await faqApi.getAll();
       if (res?.success) setFaqs(res.data);
-    } catch (err) {
+    } catch  {
       toast.error('Lỗi tải danh sách FAQ');
     }
     setIsLoading(false);
@@ -41,6 +45,7 @@ const FaqManagement = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
     try {
       if (editingFaq) {
@@ -52,20 +57,24 @@ const FaqManagement = () => {
       }
       setIsModalOpen(false);
       fetchFaqs();
-    } catch (err) {
+    } catch  {
       toast.error('Có lỗi xảy ra');
     }
     setIsSubmitting(false);
   };
 
   const handleDelete = async (id) => {
+    if (isDeleting) return;
     if (window.confirm('Bạn có chắc muốn xóa câu hỏi này?')) {
+      setIsDeleting(true);
       try {
         await faqApi.remove(id);
         toast.success('Xóa FAQ thành công');
         fetchFaqs();
-      } catch (err) {
-        toast.error('Lỗi khi xóa');
+      } catch (error) {
+        toast.error(error.response?.data?.message || 'Lỗi khi xóa');
+      } finally {
+        setIsDeleting(false);
       }
     }
   };
@@ -74,16 +83,18 @@ const FaqManagement = () => {
     try {
       await faqApi.update(faq.faq_id, { ...faq, is_active: faq.is_active ? 0 : 1 });
       fetchFaqs();
-    } catch (err) {
+    } catch  {
       toast.error('Lỗi cập nhật trạng thái');
     }
   };
 
   const filteredFaqs = faqs.filter(f => f.question.toLowerCase().includes(searchTerm.toLowerCase()));
 
+  const listPage = useListPagination(filteredFaqs, searchTerm);
+
   return (
-    <div className="p-8 space-y-8 min-h-screen bg-background/50">
-      <div className="flex justify-between items-center">
+    <div className="p-3 sm:p-6 space-y-8 min-h-screen bg-background/50">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
             <HelpCircle className="w-8 h-8 text-primary" />
@@ -110,7 +121,7 @@ const FaqManagement = () => {
         <div className="flex justify-center py-20"><Loader2 className="w-10 h-10 animate-spin text-primary" /></div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
-          {filteredFaqs.map(faq => (
+          {listPage.items.map(faq => (
             <div key={faq.faq_id} className="glass-panel p-5 rounded-2xl flex justify-between gap-6">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
@@ -123,7 +134,7 @@ const FaqManagement = () => {
               </div>
               <div className="flex gap-2 items-start shrink-0">
                 <button onClick={() => openModal(faq)} className="p-2 bg-blue-500/10 text-blue-600 rounded-lg hover:bg-blue-500/20"><Edit2 size={18} /></button>
-                <button onClick={() => handleDelete(faq.faq_id)} className="p-2 bg-red-500/10 text-red-600 rounded-lg hover:bg-red-500/20"><Trash2 size={18} /></button>
+                <button disabled={isDeleting} aria-label="Xóa" onClick={() => handleDelete(faq.faq_id)} className="p-2 bg-red-500/10 text-red-600 rounded-lg hover:bg-red-500/20"><Trash2 size={18} /></button>
               </div>
             </div>
           ))}
@@ -131,19 +142,20 @@ const FaqManagement = () => {
         </div>
       )}
 
+      {!isLoading && <Pagination {...listPage.paginationProps} />}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <ModalLayer onClose={() => setIsModalOpen(false)} label="Câu hỏi thường gặp"><div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-background w-full max-w-2xl rounded-2xl p-6 shadow-2xl relative">
             <button onClick={() => setIsModalOpen(false)} className="absolute right-4 top-4 text-muted-foreground"><XCircle size={24} /></button>
             <h2 className="text-xl font-bold mb-6">{editingFaq ? 'Sửa Câu Hỏi' : 'Thêm Câu Hỏi Mới'}</h2>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="text-xs font-bold uppercase text-muted-foreground block mb-2">Câu hỏi *</label>
-                <input required type="text" value={formData.question} onChange={e => setFormData(p => ({...p, question: e.target.value}))} className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:border-primary" />
+                <input required maxLength={500} type="text" value={formData.question} onChange={e => setFormData(p => ({...p, question: e.target.value}))} className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:border-primary" />
               </div>
               <div>
                 <label className="text-xs font-bold uppercase text-muted-foreground block mb-2">Câu trả lời *</label>
-                <textarea required rows={5} value={formData.answer} onChange={e => setFormData(p => ({...p, answer: e.target.value}))} className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:border-primary resize-none" />
+                <textarea required maxLength={20000} rows={5} value={formData.answer} onChange={e => setFormData(p => ({...p, answer: e.target.value}))} className="w-full px-4 py-3 bg-muted/50 border border-border rounded-xl outline-none focus:border-primary resize-none" />
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input type="checkbox" checked={formData.is_active} onChange={e => setFormData(p => ({...p, is_active: e.target.checked ? 1 : 0}))} className="w-5 h-5 accent-primary" />
@@ -157,7 +169,7 @@ const FaqManagement = () => {
               </div>
             </form>
           </motion.div>
-        </div>
+        </div></ModalLayer>
       )}
     </div>
   );

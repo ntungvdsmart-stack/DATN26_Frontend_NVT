@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000" viewBox="0 0 800 1000" fill="none">
+  <rect width="800" height="1000" fill="#F3F1ED"/>
+  <circle cx="400" cy="450" r="148" fill="#E9E5DF"/>
+  <g stroke="#8B8379" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M376 385c0-33 48-33 48-4 0 16-24 21-24 40v18"/>
+    <path d="m400 439-107 64c-12 7-7 23 7 23h200c14 0 19-16 7-23l-107-64Z"/>
+  </g>
+  <text x="400" y="657" text-anchor="middle" fill="#514B43" font-family="Arial, sans-serif" font-size="28" letter-spacing="7">FASHION OS</text>
+  <text x="400" y="700" text-anchor="middle" fill="#8B8379" font-family="Arial, sans-serif" font-size="23">Ảnh đang cập nhật</text>
+</svg>

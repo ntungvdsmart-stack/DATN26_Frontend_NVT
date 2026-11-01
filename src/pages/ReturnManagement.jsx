@@ -1,14 +1,27 @@
+import TableHeading from '../components/shared/TableHeading';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import ModalLayer from '../components/shared/ModalLayer';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { RefreshCcw, Search, Eye, CheckCircle, XCircle, RotateCcw, Loader2 } from 'lucide-react';
 import returnApi from '../api/returnApi';
 import { toast } from 'sonner';
+import inventoryApi from '../api/inventoryApi';
 
 const ReturnManagement = () => {
   const [returns, setReturns] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedReturn, setSelectedReturn] = useState(null);
+  const [inventory, setInventory] = useState([]);
+  const [exchanges, setExchanges] = useState({});
+  useEffect(() => {
+    setExchanges({});
+    if (selectedReturn?.return_type === 'exchange') {
+      inventoryApi.getInventory(selectedReturn.branch_id).then(result => setInventory(result.data.inventory)).catch(error => toast.error(error.message));
+    }
+  }, [selectedReturn]);
 
   const fetchReturns = async () => {
     setIsLoading(true);
@@ -31,7 +44,7 @@ const ReturnManagement = () => {
   const handleUpdateStatus = async (id, status) => {
     if (!window.confirm('Xác nhận cập nhật trạng thái này?')) return;
     try {
-      await returnApi.updateStatus(id, status);
+      await returnApi.updateStatus(id, status, exchanges);
       toast.success('Cập nhật trạng thái thành công');
       setSelectedReturn(null);
       fetchReturns();
@@ -55,11 +68,13 @@ const ReturnManagement = () => {
     (r.customer_name && r.customer_name.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
+  const listPage = useListPagination(filteredReturns, searchTerm);
+
   return (
-    <div className="p-8 space-y-8 min-h-screen bg-background/50">
+    <div className="p-1 sm:p-4 lg:p-6 space-y-5 sm:space-y-8 min-h-screen bg-background/50">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">
             <RefreshCcw className="w-8 h-8 text-primary" />
             Yêu cầu Đổi/Trả hàng
           </h1>
@@ -81,8 +96,9 @@ const ReturnManagement = () => {
       </div>
 
       <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1000px]">
+        <TableHeading title={"Y\u00eau c\u1ea7u \u0111\u1ed5i / tr\u1ea3"} count={filteredReturns.length} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table table-with-actions w-full text-left border-collapse min-w-[1000px]">
             <thead>
               <tr className="bg-muted/50 border-b border-border/50">
                 <th className="p-4 font-bold text-sm uppercase text-muted-foreground">Mã đơn</th>
@@ -106,7 +122,7 @@ const ReturnManagement = () => {
                   <td colSpan="6" className="p-12 text-center text-muted-foreground">Không có yêu cầu đổi trả nào</td>
                 </tr>
               ) : (
-                filteredReturns.map((item) => (
+                listPage.items.map((item) => (
                   <tr key={item.return_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
                     <td className="p-4 font-mono font-bold text-primary">{item.order_code}</td>
                     <td className="p-4">
@@ -132,11 +148,12 @@ const ReturnManagement = () => {
             </tbody>
           </table>
         </div>
-      </div>
+        {!isLoading && <div className="admin-table-footer"><Pagination {...listPage.paginationProps} /></div>}
+      </div> 
 
       <AnimatePresence>
         {selectedReturn && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalLayer onClose={() => setSelectedReturn(null)} label="Chi tiết đổi trả"><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedReturn(null)} />
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-3xl bg-background border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="p-6 border-b border-border/50 flex justify-between items-center bg-muted/30">
@@ -148,7 +165,7 @@ const ReturnManagement = () => {
               </div>
               
               <div className="p-6 overflow-y-auto custom-scrollbar space-y-6">
-                <div className="grid grid-cols-2 gap-4 text-sm">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div className="space-y-2">
                     <p className="text-muted-foreground uppercase text-[10px] font-bold">Mã đơn hàng</p>
                     <p className="font-mono font-bold text-lg">{selectedReturn.order_code}</p>
@@ -161,8 +178,14 @@ const ReturnManagement = () => {
 
                 <div>
                   <p className="text-muted-foreground uppercase text-[10px] font-bold mb-3">Sản phẩm yêu cầu</p>
-                  <div className="border border-border rounded-xl overflow-hidden">
-                    <table className="w-full text-sm text-left">
+                  {selectedReturn.return_type === 'exchange' && selectedReturn.status === 'approved' && <div className="space-y-3 mb-4">{selectedReturn.items.map(item => <label key={item.return_item_id} className="block text-sm">Đổi {item.product_name} sang:
+                    <select value={exchanges[item.return_item_id] || ''} onChange={event => setExchanges(previous => ({ ...previous, [item.return_item_id]: event.target.value }))} className="w-full p-3 mt-1 rounded-lg border border-border bg-background">
+                      <option value="">Chọn size/màu thay thế cùng đơn giá</option>
+                      {inventory.filter(candidate => candidate.product_id === item.product_id && Number(candidate.price) === Number(item.unit_price) && Number(candidate.quantity) >= Number(item.quantity)).map(candidate => <option key={candidate.inventory_id} value={candidate.variant_id}>{candidate.sku} — {candidate.size_value} — {candidate.color_name} (Còn {candidate.quantity})</option>)}
+                    </select>
+                  </label>)}</div>}
+                  <div className="border border-border rounded-xl overflow-x-auto">
+                    <table className="admin-data-table w-full min-w-[560px] text-sm text-left">
                       <thead className="bg-muted/50 border-b border-border">
                         <tr>
                           <th className="p-3 font-bold">Sản phẩm</th>
@@ -213,13 +236,13 @@ const ReturnManagement = () => {
                   )}
                   {selectedReturn.status === 'approved' && (
                     <button onClick={() => handleUpdateStatus(selectedReturn.return_id, 'completed')} className="bg-emerald-500 text-white px-4 py-2 rounded-lg font-bold hover:bg-emerald-600 transition-colors flex items-center gap-2 shadow-lg shadow-emerald-500/30">
-                      <RotateCcw size={18} /> Đã nhận lại hàng (Hoàn tiền & Nhập kho)
+                      <RotateCcw size={18} /> {selectedReturn.return_type === 'exchange' ? 'Nhận hàng cũ và xuất hàng đổi' : 'Nhận hàng và lập yêu cầu hoàn tiền'}
                     </button>
                   )}
                 </div>
               </div>
             </motion.div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
     </div>

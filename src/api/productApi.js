@@ -7,6 +7,7 @@ const productApi = {
   
   // ── Danh sách & chi tiết (Public Storefront) ──────────────────
   getAllPublic: () => axiosClient.get('/products'),
+  getSearchSuggestions: (q, signal) => axiosClient.get('/products/search-suggestions', { params: { q }, signal }),
   getByIdPublic: (id) => axiosClient.get(`/products/${id}`),
 
   getFormAttributes: () => axiosClient.get('/products/attributes/all'),

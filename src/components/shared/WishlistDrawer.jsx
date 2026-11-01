@@ -1,14 +1,14 @@
+import ProductImage from './ProductImage';
 import React from 'react';
+import ModalLayer from './ModalLayer';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Trash2, ArrowRight, Heart } from 'lucide-react';
+import { X, Trash2, Heart } from 'lucide-react';
 import { useWishlistStore } from '../../store/wishlistStore';
-import { useCartStore } from '../../store/cartStore';
 
 const WishlistDrawer = () => {
   const navigate = useNavigate();
   const { items, isOpen, setIsOpen, removeItem } = useWishlistStore();
-  const { addItem } = useCartStore();
 
   const handleAddToCart = (item) => {
     // Transform item if needed before adding to cart, default to first available size/color usually,
@@ -21,7 +21,7 @@ const WishlistDrawer = () => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
+        <ModalLayer drawer label="Danh sách yêu thích" onClose={() => setIsOpen(false)}>
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -37,7 +37,7 @@ const WishlistDrawer = () => {
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-            className="fixed top-0 right-0 h-full w-full sm:w-[450px] bg-background border-l border-border shadow-2xl z-[101] flex flex-col"
+            className="fixed top-0 right-0 h-[100dvh] max-w-full w-full sm:w-[450px] bg-background border-l border-border shadow-2xl z-[101] flex flex-col"
           >
             {/* Header */}
             <div className="flex items-center justify-between p-6 border-b border-border">
@@ -51,7 +51,7 @@ const WishlistDrawer = () => {
             </div>
 
             {/* Wishlist Items */}
-            <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-6 flex flex-col gap-6">
               {items.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <Heart size={48} strokeWidth={1} className="mb-4 opacity-20" />
@@ -74,8 +74,8 @@ const WishlistDrawer = () => {
                     className="flex gap-4 group"
                   >
                     <div className="w-24 h-32 bg-muted overflow-hidden cursor-pointer" onClick={() => handleAddToCart(item)}>
-                      <img 
-                        src={item.primary_image || item.image || 'https://via.placeholder.com/400'} 
+                      <ProductImage 
+                        src={item.primary_image || item.image} 
                         alt={item.product_name || item.name} 
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
                       />
@@ -114,7 +114,7 @@ const WishlistDrawer = () => {
               )}
             </div>
           </motion.div>
-        </>
+        </ModalLayer>
       )}
     </AnimatePresence>
   );

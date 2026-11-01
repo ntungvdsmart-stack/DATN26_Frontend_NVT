@@ -10,17 +10,20 @@ export const useCartStore = create(
       addItem: (product) => {
         const currentItems = get().items;
         const existing = currentItems.find(item => item.id === product.id);
+        const maxQty = Math.max(0, Number(product.maxStock ?? 999));
+        if ((existing?.qty || 0) >= maxQty) return false;
         if (existing) {
-          set({ items: currentItems.map(item => item.id === product.id ? { ...item, qty: item.qty + 1 } : item) });
+          set({ items: currentItems.map(item => item.id === product.id ? { ...item, ...product, qty: item.qty + 1 } : item) });
         } else {
           set({ items: [...currentItems, { ...product, qty: 1 }] });
         }
         set({ isOpen: true }); // Mở giỏ hàng khi thêm
+        return true;
       },
       removeItem: (id) => set({ items: get().items.filter(item => item.id !== id) }),
       updateQuantity: (id, delta) => set({
         items: get().items
-          .map(item => item.id === id ? { ...item, qty: item.qty + delta } : item)
+          .map(item => item.id === id ? { ...item, qty: Math.min(Number(item.maxStock ?? 999), item.qty + delta) } : item)
           .filter(item => item.qty > 0) // Tự xóa nếu qty giảm về 0
       }),
       clearCart: () => set({ items: [] }),

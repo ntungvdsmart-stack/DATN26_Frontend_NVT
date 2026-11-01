@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import ProductImage from '../components/shared/ProductImage';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { User, Package, Lock, ChevronRight, Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Clock, Truck, XCircle, RotateCcw } from 'lucide-react';
+import { User, Package, Lock, Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Truck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import userApi from '../api/userApi';
@@ -11,30 +14,20 @@ import { cn } from '../lib/utils';
 import { Link } from 'react-router-dom';
 import { Heart } from 'lucide-react';
 
-const statusConfig = {
-  pending: { label: 'Chờ xác nhận', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20', icon: Clock },
-  confirmed: { label: 'Đã xác nhận', color: 'bg-blue-500/10 text-blue-600 border-blue-500/20', icon: CheckCircle2 },
-  processing: { label: 'Đang xử lý', color: 'bg-indigo-500/10 text-indigo-600 border-indigo-500/20', icon: Package },
-  shipping: { label: 'Đang giao', color: 'bg-purple-500/10 text-purple-600 border-purple-500/20', icon: Truck },
-  completed: { label: 'Hoàn thành', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20', icon: CheckCircle2 },
-  cancelled: { label: 'Đã hủy', color: 'bg-red-500/10 text-red-600 border-red-500/20', icon: XCircle },
-  returned: { label: 'Trả hàng', color: 'bg-orange-500/10 text-orange-600 border-orange-500/20', icon: RotateCcw },
-};
-
 const UserProfile = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('profile');
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState(null);
-  const [orders, setOrders] = useState([]);
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [orderDetailLoading, setOrderDetailLoading] = useState(false);
 
   // Addresses
   const [addresses, setAddresses] = useState([]);
   const [addressForm, setAddressForm] = useState({ recipient_name: '', recipient_phone: '', full_address: '', ward: '', district: '', city: '', is_default: false, latitude: null, longitude: null });
   const [isAddingAddress, setIsAddingAddress] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState(null);
+  const [addressSaving, setAddressSaving] = useState(false);
+  const [addressError, setAddressError] = useState('');
 
   // Profile form
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '' });
@@ -52,18 +45,7 @@ const UserProfile = () => {
   const [wishlist, setWishlist] = useState([]);
   const [wishlistLoading, setWishlistLoading] = useState(false);
 
-  useEffect(() => {
-    if (!user || user.role !== 'customer') {
-      navigate('/login');
-      return;
-    }
-    fetchProfile();
-    fetchOrders();
-    fetchAddresses();
-    fetchWishlist();
-  }, [user]);
-
-  const fetchWishlist = async () => {
+  const fetchWishlist = useCallback(async () => {
     setWishlistLoading(true);
     try {
       const res = await wishlistApi.get();
@@ -74,16 +56,16 @@ const UserProfile = () => {
       console.error(err);
     }
     setWishlistLoading(false);
-  };
+  }, []);
 
-  const fetchAddresses = async () => {
+  const fetchAddresses = useCallback(async () => {
     try {
       const res = await addressApi.get();
       if (res?.success) setAddresses(res.data);
-    } catch (err) {}
-  };
+    } catch (error) { setAddressError(error.message || 'Không tải được địa chỉ'); }
+  }, []);
 
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       const res = await userApi.getProfile();
       if (res?.success) {
@@ -95,34 +77,25 @@ const UserProfile = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user]);
 
-  const fetchOrders = async () => {
-    try {
-      const res = await userApi.getMyOrders();
-      if (res?.success) {
-        setOrders(res.data);
-      }
-    } catch (err) {
-      console.error('Error fetching orders:', err);
-    }
-  };
-
-  const handleViewOrderDetail = async (orderId) => {
-    if (selectedOrder?.order_id === orderId) {
-      setSelectedOrder(null);
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user || user.role !== 'customer') {
+      navigate('/login');
       return;
     }
-    setOrderDetailLoading(true);
-    try {
-      const res = await userApi.getMyOrderDetail(orderId);
-      if (res?.success) {
-        setSelectedOrder(res.data);
-      }
-    } catch (err) {
-      console.error('Error fetching order detail:', err);
-    }
-    setOrderDetailLoading(false);
+    fetchProfile();
+    fetchAddresses();
+    fetchWishlist();
+  }, [user, authLoading, navigate, fetchProfile, fetchAddresses, fetchWishlist]);
+
+  const handleAddressAction = async action => {
+    if (addressSaving) return;
+    setAddressSaving(true); setAddressError('');
+    try { await action(); await fetchAddresses(); }
+    catch (error) { setAddressError(error.message || 'Không cập nhật được địa chỉ'); }
+    finally { setAddressSaving(false); }
   };
 
   const handleSaveProfile = async (e) => {
@@ -131,7 +104,7 @@ const UserProfile = () => {
       setProfileMsg({ type: 'error', text: 'Họ và tên phải có ít nhất 2 ký tự' });
       return;
     }
-    if (profileForm.phone && !/^(0[3|5|7|8|9])+([0-9]{8})$/.test(profileForm.phone)) {
+    if (profileForm.phone && !/^(0[0-9]{9}|\+84[0-9]{9})$/.test(profileForm.phone.trim())) {
       setProfileMsg({ type: 'error', text: 'Số điện thoại không hợp lệ' });
       return;
     }
@@ -156,8 +129,8 @@ const UserProfile = () => {
     e.preventDefault();
     setPassMsg({ type: '', text: '' });
 
-    if (passForm.newPassword.length < 6) {
-      setPassMsg({ type: 'error', text: 'Mật khẩu mới phải có ít nhất 6 ký tự' });
+    if (passForm.newPassword.length < 8 || new TextEncoder().encode(passForm.newPassword).length > 72) {
+      setPassMsg({ type: 'error', text: 'Mật khẩu mới cần từ 8 ký tự và không quá 72 byte' });
       return;
     }
     if (passForm.newPassword !== passForm.confirmPassword) {
@@ -177,6 +150,7 @@ const UserProfile = () => {
       if (res?.success) {
         setPassMsg({ type: 'success', text: 'Đổi mật khẩu thành công!' });
         setPassForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+        logout();
       } else {
         setPassMsg({ type: 'error', text: res?.message || 'Lỗi' });
       }
@@ -195,7 +169,10 @@ const UserProfile = () => {
     { id: 'password', icon: Lock, label: 'Đổi mật khẩu' },
   ];
 
-  if (isLoading) {
+  const addressPage = useListPagination(addresses, user?.id || '');
+  const wishlistPage = useListPagination(wishlist, user?.id || '');
+
+  if (authLoading || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-10 h-10 animate-spin text-primary" />
@@ -206,12 +183,12 @@ const UserProfile = () => {
   const INPUT_CLS = "w-full px-4 py-3 bg-background border border-border outline-none focus:border-foreground transition-colors text-sm";
 
   return (
-    <div className="bg-background min-h-screen pb-20 pt-10">
-      <div className="container mx-auto px-4 max-w-5xl">
+    <div className="customer-page">
+      <div className="customer-container">
         
         {/* Header */}
         <div className="mb-10">
-          <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight">Tài khoản của tôi</h1>
+          <h1 className="customer-title">Tài khoản của tôi</h1>
           <p className="text-muted-foreground mt-2 text-sm">
             Xin chào, <span className="font-bold text-foreground">{profile?.full_name || user?.full_name}</span>
           </p>
@@ -219,19 +196,19 @@ const UserProfile = () => {
 
         {/* Stats bar */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-          <div className="bg-card border border-border p-5 text-center">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 text-center min-w-0">
             <p className="text-2xl font-black">{profile?.total_orders || 0}</p>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Đơn hàng</p>
           </div>
-          <div className="bg-card border border-border p-5 text-center">
-            <p className="text-2xl font-black">{Number(profile?.total_spent || 0).toLocaleString('vi-VN')}đ</p>
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 text-center min-w-0">
+            <p className="text-lg sm:text-2xl font-bold break-words">{Number(profile?.total_spent || 0).toLocaleString('vi-VN')}đ</p>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Đã chi tiêu</p>
           </div>
-          <div className="bg-card border border-border p-5 text-center">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 text-center min-w-0">
             <p className="text-2xl font-black capitalize">{profile?.customer_type || 'online'}</p>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Loại tài khoản</p>
           </div>
-          <div className="bg-card border border-border p-5 text-center">
+          <div className="bg-card border border-border rounded-2xl p-4 sm:p-5 text-center min-w-0">
             <p className="text-2xl font-black">{profile?.created_at ? new Date(profile.created_at).toLocaleDateString('vi-VN') : '—'}</p>
             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mt-1">Tham gia từ</p>
           </div>
@@ -247,9 +224,9 @@ const UserProfile = () => {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => tab.id === 'orders' ? navigate('/store/orders') : setActiveTab(tab.id)}
                     className={cn(
-                      'flex items-center gap-3 px-4 py-3 text-sm font-semibold transition-all whitespace-nowrap',
+                      'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold transition-all whitespace-nowrap',
                       isActive ? 'bg-foreground text-background shadow-sm' : 'hover:bg-muted text-muted-foreground'
                     )}
                   >
@@ -273,7 +250,7 @@ const UserProfile = () => {
               {/* ── TAB: Thông tin cá nhân ── */}
               {activeTab === 'profile' && (
                 <motion.div key="profile" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                  <div className="bg-card border border-border p-6 md:p-8">
+                  <div className="bg-card border border-border rounded-2xl p-5 sm:p-6 md:p-8 shadow-sm">
                     <h2 className="text-lg font-bold uppercase tracking-wider mb-6 border-b border-border pb-3">Thông tin cá nhân</h2>
 
                     {profileMsg.text && (
@@ -288,7 +265,7 @@ const UserProfile = () => {
                     <form onSubmit={handleSaveProfile} className="space-y-5">
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Họ và tên *</label>
-                        <input type="text" value={profileForm.full_name} onChange={e => setProfileForm(p => ({...p, full_name: e.target.value}))} required className={INPUT_CLS} />
+                        <input type="text" minLength={2} maxLength={150} value={profileForm.full_name} onChange={e => setProfileForm(p => ({...p, full_name: e.target.value}))} required className={INPUT_CLS} />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Email</label>
@@ -297,7 +274,7 @@ const UserProfile = () => {
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Số điện thoại</label>
-                        <input type="tel" value={profileForm.phone} onChange={e => setProfileForm(p => ({...p, phone: e.target.value}))} className={INPUT_CLS} />
+                        <input type="tel" maxLength={20} pattern="(0[0-9]{9}|[+]84[0-9]{9})" value={profileForm.phone} onChange={e => setProfileForm(p => ({...p, phone: e.target.value}))} className={INPUT_CLS} />
                       </div>
                       <button type="submit" disabled={profileSaving} className="bg-foreground text-background px-8 py-3 font-bold text-xs uppercase tracking-widest hover:bg-foreground/90 transition-colors disabled:opacity-50 flex items-center gap-2">
                         {profileSaving && <Loader2 size={14} className="animate-spin" />}
@@ -309,116 +286,16 @@ const UserProfile = () => {
               )}
 
               {/* ── TAB: Lịch sử đơn hàng ── */}
-              {activeTab === 'orders' && (
-                <motion.div key="orders" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                  <div className="bg-card border border-border p-6 md:p-8">
-                    <h2 className="text-lg font-bold uppercase tracking-wider mb-6 border-b border-border pb-3">Lịch sử đơn hàng</h2>
-
-                    {orders.length === 0 ? (
-                      <div className="text-center py-16">
-                        <Package className="w-12 h-12 text-muted-foreground/30 mx-auto mb-4" />
-                        <p className="text-muted-foreground">Bạn chưa có đơn hàng nào</p>
-                        <button onClick={() => navigate('/store')} className="mt-4 text-primary underline underline-offset-4 text-sm font-medium">Bắt đầu mua sắm</button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {orders.map(order => {
-                          const status = statusConfig[order.order_status] || statusConfig.pending;
-                          const StatusIcon = status.icon;
-                          const isExpanded = selectedOrder?.order_id === order.order_id;
-                          
-                          return (
-                            <div key={order.order_id} className="border border-border overflow-hidden">
-                              <button
-                                onClick={() => handleViewOrderDetail(order.order_id)}
-                                className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 md:p-5 hover:bg-muted/50 transition-colors text-left gap-3"
-                              >
-                                <div className="flex items-center gap-4">
-                                  <div className="text-sm">
-                                    <p className="font-bold">{order.order_code}</p>
-                                    <p className="text-xs text-muted-foreground mt-1">
-                                      {new Date(order.created_at).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                      {' · '}{order.total_items} sản phẩm
-                                    </p>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-4">
-                                  <span className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1 border ${status.color} flex items-center gap-1.5`}>
-                                    <StatusIcon size={12} />
-                                    {status.label}
-                                  </span>
-                                  <span className="font-bold text-sm min-w-[100px] text-right">{Number(order.total_amount).toLocaleString('vi-VN')}đ</span>
-                                  <ChevronRight size={16} className={cn('text-muted-foreground transition-transform', isExpanded && 'rotate-90')} />
-                                </div>
-                              </button>
-
-                              {/* Order detail expand */}
-                              <AnimatePresence>
-                                {isExpanded && selectedOrder && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    className="overflow-hidden"
-                                  >
-                                    <div className="border-t border-border p-4 md:p-5 bg-muted/30">
-                                      {orderDetailLoading ? (
-                                        <div className="flex items-center justify-center py-8">
-                                          <Loader2 className="w-6 h-6 animate-spin" />
-                                        </div>
-                                      ) : (
-                                        <>
-                                          <p className="text-xs text-muted-foreground mb-3">
-                                            <span className="font-bold">Địa chỉ:</span> {selectedOrder.shipping_address_snapshot}
-                                          </p>
-                                          <div className="space-y-3">
-                                            {selectedOrder.items?.map(item => (
-                                              <div key={item.order_item_id} className="flex items-center gap-4 bg-background p-3 border border-border">
-                                                <div className="w-14 h-14 bg-muted shrink-0 overflow-hidden">
-                                                  {item.image_url ? (
-                                                    <img src={item.image_url} alt="" className="w-full h-full object-cover" />
-                                                  ) : (
-                                                    <div className="w-full h-full flex items-center justify-center text-muted-foreground text-[10px]">N/A</div>
-                                                  )}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                  <p className="font-bold text-sm truncate">{item.product_name}</p>
-                                                  <p className="text-xs text-muted-foreground">
-                                                    {item.color_name && `${item.color_name}`}{item.size_value && ` · ${item.size_value}`} · SL: {item.quantity}
-                                                  </p>
-                                                </div>
-                                                <p className="font-bold text-sm shrink-0">{Number(item.unit_price * item.quantity).toLocaleString('vi-VN')}đ</p>
-                                              </div>
-                                            ))}
-                                          </div>
-                                          <div className="mt-4 pt-4 border-t border-border flex justify-between text-sm">
-                                            <span className="text-muted-foreground">Phương thức thanh toán</span>
-                                            <span className="font-bold uppercase">{selectedOrder.payment_method || 'COD'}</span>
-                                          </div>
-                                        </>
-                                      )}
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-
-              {/* ── TAB: Sổ địa chỉ ── */}
               {activeTab === 'addresses' && (
                 <motion.div key="addresses" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                  <div className="bg-card border border-border p-6 md:p-8">
+                  <div className="bg-card border border-border rounded-2xl p-5 sm:p-6 md:p-8 shadow-sm">
                     <div className="flex justify-between items-center mb-6 border-b border-border pb-3">
                       <h2 className="text-lg font-bold uppercase tracking-wider">Sổ địa chỉ</h2>
                       <button 
                         onClick={() => {
                           setIsAddingAddress(!isAddingAddress);
+                          setEditingAddressId(null);
+                          setAddressError('');
                           if (!isAddingAddress) {
                             setAddressForm({ 
                               recipient_name: profile?.full_name || user?.full_name || '', 
@@ -433,33 +310,42 @@ const UserProfile = () => {
                       </button>
                     </div>
 
+                    {addressError && !isAddingAddress && <p role="alert" className="text-destructive text-sm mb-4">{addressError}</p>}
                     {isAddingAddress && (
                       <form onSubmit={async (e) => {
                         e.preventDefault();
+                        if (addressSaving) return;
+                        if (!addressForm.recipient_name.trim() || !addressForm.full_address.trim() || !/^(0\d{9}|\+84\d{9})$/.test(addressForm.recipient_phone)) { setAddressError('Nhập tên người nhận, địa chỉ đầy đủ và số điện thoại hợp lệ'); return; }
+                        setAddressSaving(true);
+                        setAddressError('');
                         try {
-                          await addressApi.add(addressForm);
+                          if (editingAddressId) await addressApi.update(editingAddressId, addressForm);
+                          else await addressApi.add(addressForm);
                           setIsAddingAddress(false);
+                          setEditingAddressId(null);
                           setAddressForm({ recipient_name: '', recipient_phone: '', full_address: '', ward: '', district: '', city: '', is_default: false, latitude: null, longitude: null });
                           fetchAddresses();
-                        } catch (err) {
-                          alert('Lỗi thêm địa chỉ');
-                        }
+                        } catch (error) {
+                          setAddressError(error.message || 'Không lưu được địa chỉ');
+                        } finally { setAddressSaving(false); }
                       }} className="mb-8 p-4 border border-border bg-muted/20 space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
+                        <h3 className="font-semibold">{editingAddressId ? 'Sửa địa chỉ' : 'Thêm địa chỉ'}</h3>
+                        {addressError && <p role="alert" className="text-destructive text-sm">{addressError}</p>}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div>
                             <label className="text-xs font-bold uppercase text-muted-foreground block mb-1">Họ tên người nhận *</label>
-                            <input type="text" required value={addressForm.recipient_name} onChange={e => setAddressForm(p => ({...p, recipient_name: e.target.value}))} className={INPUT_CLS} />
+                            <input aria-label="Tên người nhận" type="text" maxLength={150} required value={addressForm.recipient_name} onChange={e => setAddressForm(p => ({...p, recipient_name: e.target.value}))} className={INPUT_CLS} />
                           </div>
                           <div>
                             <label className="text-xs font-bold uppercase text-muted-foreground block mb-1">Số điện thoại *</label>
-                            <input type="text" required value={addressForm.recipient_phone} onChange={e => setAddressForm(p => ({...p, recipient_phone: e.target.value}))} className={INPUT_CLS} />
+                            <input aria-label="Số điện thoại người nhận" type="tel" maxLength={20} pattern="(0[0-9]{9}|[+]84[0-9]{9})" required value={addressForm.recipient_phone} onChange={e => setAddressForm(p => ({...p, recipient_phone: e.target.value}))} className={INPUT_CLS} />
                           </div>
                         </div>
                         <div>
                           <label className="text-xs font-bold uppercase text-muted-foreground block mb-1">Địa chỉ đầy đủ *</label>
-                          <VietmapAutocomplete 
+                          <VietmapAutocomplete required
                             value={addressForm.full_address}
-                            onChange={(val, lat, lng) => setAddressForm(p => ({...p, full_address: val, city: '', district: '', ward: '', latitude: lat || p.latitude, longitude: lng || p.longitude}))}
+                            onChange={(val, lat, lng) => setAddressForm(p => ({...p, full_address: val, city: '', district: '', ward: '', latitude: lat ?? null, longitude: lng ?? null}))}
                             placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố"
                             className="bg-muted/50 border-border focus:bg-background"
                           />
@@ -468,7 +354,7 @@ const UserProfile = () => {
                           <input type="checkbox" checked={addressForm.is_default} onChange={e => setAddressForm(p => ({...p, is_default: e.target.checked}))} className="w-4 h-4 accent-primary" />
                           Đặt làm địa chỉ mặc định
                         </label>
-                        <button type="submit" className="bg-primary text-primary-foreground px-6 py-2.5 font-bold uppercase tracking-widest hover:opacity-90 w-full mt-2">Lưu Địa Chỉ</button>
+                        <button type="submit" disabled={addressSaving} className="bg-primary text-primary-foreground px-6 py-2.5 font-bold uppercase tracking-widest hover:opacity-90 disabled:opacity-50 w-full mt-2">{addressSaving ? 'Đang lưu...' : 'Lưu địa chỉ'}</button>
                       </form>
                     )}
 
@@ -476,8 +362,8 @@ const UserProfile = () => {
                       {addresses.length === 0 && !isAddingAddress && (
                         <p className="text-center text-muted-foreground py-8">Bạn chưa có địa chỉ nào được lưu.</p>
                       )}
-                      {addresses.map(addr => (
-                        <div key={addr.address_id} className="border border-border p-4 flex justify-between items-start">
+                      {addressPage.items.map(addr => (
+                        <div key={addr.address_id} className="border border-border rounded-xl p-4 flex flex-col sm:flex-row justify-between items-start gap-4 break-words">
                           <div>
                             <div className="flex items-center gap-3 mb-2">
                               <span className="font-bold text-lg">{addr.recipient_name}</span>
@@ -485,16 +371,18 @@ const UserProfile = () => {
                             </div>
                             <p className="text-sm text-muted-foreground mb-1">SĐT: {addr.recipient_phone}</p>
                             <p className="text-sm">{addr.full_address}</p>
-                            <p className="text-sm">{addr.ward}, {addr.district}, {addr.city}</p>
+                            <p className="text-sm">{[addr.ward, addr.district, addr.city].filter(Boolean).join(', ')}</p>
                           </div>
                           <div className="flex flex-col gap-2 items-end">
+                            <button onClick={() => { setEditingAddressId(addr.address_id); setAddressForm({ ...addr, is_default: Boolean(addr.is_default) }); setAddressError(''); setIsAddingAddress(true); }} className="text-xs font-bold text-primary hover:underline">Sửa địa chỉ</button>
                             {!addr.is_default && (
-                              <button onClick={async () => { await addressApi.setDefault(addr.address_id); fetchAddresses(); }} className="text-xs font-bold text-primary hover:underline">Đặt mặc định</button>
+                              <button disabled={addressSaving} onClick={() => handleAddressAction(() => addressApi.setDefault(addr.address_id))} className="text-xs font-bold text-primary hover:underline disabled:opacity-50">Đặt mặc định</button>
                             )}
-                            <button onClick={async () => { if(confirm('Xóa địa chỉ?')){ await addressApi.remove(addr.address_id); fetchAddresses(); } }} className="text-xs font-bold text-destructive hover:underline">Xóa</button>
+                            <button disabled={addressSaving} onClick={() => { if(window.confirm('Xóa địa chỉ?')) handleAddressAction(() => addressApi.remove(addr.address_id)); }} className="text-xs font-bold text-destructive hover:underline disabled:opacity-50">Xóa</button>
                           </div>
                         </div>
                       ))}
+                      <Pagination {...addressPage.paginationProps} />
                     </div>
                   </div>
                 </motion.div>
@@ -503,7 +391,7 @@ const UserProfile = () => {
               {/* ── TAB: Đổi mật khẩu ── */}
               {activeTab === 'password' && (
                 <motion.div key="password" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                  <div className="bg-card border border-border p-6 md:p-8">
+                  <div className="bg-card border border-border rounded-2xl p-5 sm:p-6 md:p-8 shadow-sm">
                     <h2 className="text-lg font-bold uppercase tracking-wider mb-6 border-b border-border pb-3">Đổi mật khẩu</h2>
 
                     {passMsg.text && (
@@ -532,14 +420,14 @@ const UserProfile = () => {
                         </div>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Mật khẩu mới * (tối thiểu 6 ký tự)</label>
+                        <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Mật khẩu mới * (tối thiểu 8 ký tự)</label>
                         <div className="relative">
                           <input
                             type={showNewPass ? 'text' : 'password'}
                             value={passForm.newPassword}
                             onChange={e => setPassForm(p => ({...p, newPassword: e.target.value}))}
                             required
-                            minLength={6}
+                            minLength={8}
                             className={INPUT_CLS}
                           />
                           <button type="button" onClick={() => setShowNewPass(p => !p)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground">
@@ -572,7 +460,7 @@ const UserProfile = () => {
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="bg-card border border-border p-6 md:p-10 min-h-[500px]"
+                  className="bg-card border border-border rounded-2xl p-5 sm:p-6 md:p-10 min-h-[500px]"
                 >
                   <h2 className="text-2xl font-black uppercase mb-8 pb-4 border-b border-border">Sản phẩm yêu thích</h2>
                   {wishlistLoading ? (
@@ -587,14 +475,14 @@ const UserProfile = () => {
                       </div>
                   ) : (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                          {wishlist.map(item => (
+                          {wishlistPage.items.map(item => (
                               <div key={item.wishlist_id} className="group relative border border-border bg-background flex flex-col">
-                                  <Link to={`/store/product/${item.product_id}`} className="block relative aspect-[3/4] bg-muted/30 overflow-hidden">
-                                      <img src={item.image_url || '/placeholder.jpg'} alt={item.product_name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                                  <Link to={`/store/products/${item.product_id}`} className="block relative aspect-[3/4] bg-muted/30 overflow-hidden">
+                                      <ProductImage src={item.image_url} alt={item.product_name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
                                   </Link>
                                   <div className="p-4 flex flex-col flex-1">
                                       <h3 className="font-bold text-sm line-clamp-2 uppercase group-hover:text-primary transition-colors">
-                                          <Link to={`/store/product/${item.product_id}`}>{item.product_name}</Link>
+                                          <Link to={`/store/products/${item.product_id}`}>{item.product_name}</Link>
                                       </h3>
                                       <p className="text-xs text-muted-foreground mt-1">{item.color_name} · {item.size_name}</p>
                                       <p className="font-black mt-2">{Number(item.price).toLocaleString('vi-VN')}đ</p>
@@ -612,6 +500,7 @@ const UserProfile = () => {
                                   </div>
                               </div>
                           ))}
+                      <div className="col-span-full"><Pagination {...wishlistPage.paginationProps} /></div>
                       </div>
                   )}
                 </motion.div>

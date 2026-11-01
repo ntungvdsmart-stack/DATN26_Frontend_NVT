@@ -1,65 +1,77 @@
-import React, { useState, useEffect } from 'react';
+import TableHeading from '../components/shared/TableHeading';
+import Pagination from '../components/shared/Pagination';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ChevronLeft, ChevronRight, CheckCircle2, XCircle, Clock, CreditCard, Banknote, Download } from 'lucide-react';
+import { Search, CheckCircle2, XCircle, Clock, Banknote, Download } from 'lucide-react';
 import { cn } from '../lib/utils';
 import orderApi from '../api/orderApi';
-import { statsData } from '../utils/statsData';
+import axiosClient from '../api/axiosClient';
+import { toast } from 'sonner';
+import { useAuth } from '../context/AuthContext';
 
 const PAGE_SIZE = 8;
 
-const Pagination = ({ page, totalPages, onChange }) => (
-  <div className="flex items-center justify-center gap-2 mt-6">
-    <button
-      onClick={() => onChange(Math.max(1, page - 1))}
-      disabled={page === 1}
-      className="w-9 h-9 flex items-center justify-center border border-border rounded-full disabled:opacity-30 hover:bg-muted transition-colors"
-    >
-      <ChevronLeft size={15} />
-    </button>
-    {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-      <button
-        key={p}
-        onClick={() => onChange(p)}
-        className={cn(
-          'w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold transition-all',
-          p === page ? 'bg-foreground text-background' : 'border border-border hover:bg-muted'
-        )}
-      >
-        {p}
-      </button>
-    ))}
-    <button
-      onClick={() => onChange(Math.min(totalPages, page + 1))}
-      disabled={page === totalPages}
-      className="w-9 h-9 flex items-center justify-center border border-border rounded-full disabled:opacity-30 hover:bg-muted transition-colors"
-    >
-      <ChevronRight size={15} />
-    </button>
-  </div>
-);
+
 
 const Payments = () => {
+  const { role } = useAuth();
+  const [refunds, setRefunds] = useState([]);
+  const [refundPage, setRefundPage] = useState(1);
+  const [refundPagination, setRefundPagination] = useState({ total: 0, totalPages: 1 });
+  const [refundLoading, setRefundLoading] = useState(false);
+  const [processingRefund, setProcessingRefund] = useState(null);
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('Tất cả');
 
-  useEffect(() => {
-    fetchOrders();
-  }, []);
-
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await orderApi.getAllOrders({ limit: 10000 });
+      const res = await orderApi.getAllOrders({ limit: 100, page: 1 });
       if (res && res.success) {
-        setOrders(res.data.items || []);
+        const items = [...(res.data.items || [])];
+        const pages = Number(res.data.pagination?.totalPages || 1);
+        for (let start = 2; start <= pages; start += 5) {
+          const batch = await Promise.all(Array.from({ length: Math.min(5, pages - start + 1) }, (_, index) => orderApi.getAllOrders({ limit: 100, page: start + index })));
+          batch.forEach(result => items.push(...(result.data.items || [])));
+        }
+        setOrders(items);
       }
     } catch (err) {
       console.error(err);
     }
     setIsLoading(false);
+  }, []);
+
+  const loadRefunds = useCallback(() => {
+    if (role === 'admin') {
+      setRefundLoading(true);
+      axiosClient.get('/payments/refunds', { params: { page: refundPage, limit: 20 } }).then(result => {
+        setRefunds(result.data); setRefundPagination(result.pagination);
+        if (result.pagination.page !== refundPage) setRefundPage(result.pagination.page);
+      }).catch(error => toast.error(error.message)).finally(() => setRefundLoading(false));
+    }
+  }, [role, refundPage]);
+
+  useEffect(() => {
+    loadRefunds();
+  }, [loadRefunds]);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  const completeRefund = async (refund) => {
+    const message = refund.payment_method === 'stripe' ? 'Hoàn tiền về thẻ cho khách ngay bây giờ?' : 'Bạn đã hoàn tiền thực tế cho khách qua phương thức gốc và muốn xác nhận?';
+    if (!window.confirm(message)) return;
+    setProcessingRefund(refund.refund_id);
+    try {
+      await axiosClient.put(`/payments/refunds/${refund.refund_id}/complete`, { confirmed: true });
+      toast.success('Đã xác nhận hoàn tiền'); loadRefunds(); fetchOrders();
+    } catch (error) { toast.error(error.message); }
+    finally { setProcessingRefund(null); }
   };
 
   const transactions = orders.map((o) => {
@@ -68,13 +80,13 @@ const Payments = () => {
       orderId: o.order_code,
       customer: o.customer_name || 'Khách vãng lai',
       amount: Number(o.total_amount) || 0,
-      method: o.payment_method === 'stripe' ? 'Thẻ Quốc tế (Stripe)' : (o.payment_method === 'bank' ? 'Chuyển khoản' : (o.payment_method === 'momo' ? 'Momo' : (o.payment_method === 'vnpay' ? 'VNPay' : 'Tiền mặt'))),
-      status: o.payment_status === 'success' ? 'Thành công' : (o.payment_status === 'pending' ? 'Đang xử lý' : 'Thất bại'),
+      method: o.payment_method === 'stripe' ? 'Thẻ Quốc tế (Stripe)' : (o.payment_method === 'bank_transfer' ? 'Chuyển khoản' : (o.payment_method === 'momo' ? 'Momo' : (o.payment_method === 'vnpay' ? 'VNPay' : 'Tiền mặt'))),
+      status: o.payment_status === 'refunded' ? 'Đã hoàn tiền' : o.payment_status === 'success' ? 'Thành công' : (o.payment_status === 'pending' ? 'Đang xử lý' : 'Thất bại'),
       date: new Date(o.created_at).toLocaleDateString('vi-VN'),
     };
   });
 
-  const tabs = ['Tất cả', 'Thành công', 'Đang xử lý', 'Thất bại'];
+  const tabs = ['Tất cả', 'Thành công', 'Đang xử lý', 'Thất bại', 'Đã hoàn tiền'];
 
   const filtered = transactions.filter(t => {
     const matchSearch = t.id.toLowerCase().includes(search.toLowerCase()) || t.customer.toLowerCase().includes(search.toLowerCase());
@@ -82,8 +94,18 @@ const Payments = () => {
     return matchSearch && matchFilter;
   });
 
+  const exportTransactions = () => {
+    const escape = value => '"' + String(value ?? '').replace(/"/g, '""').replace(/^[=+@-]/, "'$&") + '"';
+    const rows = [['Transaction', 'Order', 'Customer', 'Amount (VND)', 'Method', 'Status', 'Date'], ...filtered.map(t => [t.id, t.orderId, t.customer, t.amount, t.method, t.status, t.date])];
+    const blob = new Blob(['\uFEFF' + rows.map(row => row.map(escape).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a'); link.href = url; link.download = 'transactions.csv'; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
-  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const currentPage = Math.min(page, totalPages);
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
+  const paginated = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   return (
     <div className="space-y-6 pb-10">
@@ -92,7 +114,7 @@ const Payments = () => {
           <h1 className="text-2xl font-bold tracking-tight">Thanh toán & Giao dịch</h1>
           <p className="text-muted-foreground text-sm mt-1">Lịch sử thanh toán và đối soát dòng tiền</p>
         </div>
-        <button className="flex items-center justify-center gap-2 px-4 py-2 bg-foreground text-background rounded-lg text-sm font-bold hover:bg-foreground/90 transition-colors w-full sm:w-auto">
+        <button onClick={exportTransactions} className="flex items-center justify-center gap-2 px-4 py-2 bg-foreground text-background rounded-lg text-sm font-bold hover:bg-foreground/90 transition-colors w-full sm:w-auto">
           <Download size={16} /> Xuất đối soát
         </button>
       </div>
@@ -108,7 +130,7 @@ const Payments = () => {
           <p className="text-3xl font-black text-foreground">
             {(transactions.filter(t => t.status === 'Thành công').reduce((s, t) => s + t.amount, 0) / 1000000).toFixed(1)}M đ
           </p>
-          <p className="text-xs font-semibold text-emerald-500 mt-2">+12.5% so với tuần trước</p>
+          <p className="text-xs font-semibold text-emerald-500 mt-2">Tổng giao dịch đã ghi nhận thanh toán</p>
         </div>
         <div className="bg-card border border-border rounded-2xl p-6 shadow-sm relative overflow-hidden group">
           <div className="absolute -right-4 -top-4 w-24 h-24 bg-amber-500/10 rounded-full blur-xl group-hover:bg-amber-500/20 transition-colors" />
@@ -161,8 +183,9 @@ const Payments = () => {
       </div>
 
       <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[760px]">
+        <TableHeading title={"L\u1ecbch s\u1eed thanh to\u00e1n"} count={filtered.length} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table w-full text-sm min-w-[760px]">
             <thead className="bg-muted/30 border-b border-border">
               <tr>
                 <th className="text-left px-5 py-4 text-xs font-bold text-muted-foreground uppercase tracking-wider">Mã GD / Đơn Hàng</th>
@@ -223,6 +246,11 @@ const Payments = () => {
         </div>
       </div>
 
+      {role === 'admin' && <section className="space-y-3 pt-6 border-t border-border">
+        <h2 className="text-xl font-bold">Yêu cầu hoàn tiền</h2>
+        {refunds.length === 0 ? <p className="text-muted-foreground">Chưa có yêu cầu hoàn tiền.</p> : <div className="overflow-x-auto"><table className="admin-data-table w-full min-w-[600px] text-sm text-left"><thead><tr>{['Đơn hàng', 'Khách hàng', 'Số tiền', 'Phương thức', 'Trạng thái', 'Thao tác'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>{refunds.map(refund => <tr key={refund.refund_id} className="border-t border-border"><td className="p-3">{refund.order_code}</td><td className="p-3">{refund.customer_name || 'Khách vãng lai'}</td><td className="p-3">{Number(refund.amount).toLocaleString('vi-VN')}đ</td><td className="p-3">{refund.payment_method}</td><td className="p-3">{refund.status === 'completed' ? 'Đã hoàn tiền' : refund.status === 'pending' ? 'Chờ xử lý' : 'Từ chối'}</td><td className="p-3">{refund.status === 'pending' && <button disabled={processingRefund !== null} onClick={() => completeRefund(refund)} className="px-3 py-2 rounded-lg bg-primary text-primary-foreground disabled:opacity-50">{processingRefund === refund.refund_id ? 'Đang xử lý...' : refund.payment_method === 'stripe' ? 'Hoàn về thẻ' : 'Xác nhận đã hoàn'}</button>}</td></tr>)}</tbody></table></div>}
+        <Pagination page={refundPage} totalPages={refundPagination.totalPages} totalItems={refundPagination.total} pageSize={20} disabled={refundLoading} onChange={setRefundPage} label="Hoàn tiền" />
+      </section>}
       {filtered.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">Không tìm thấy giao dịch nào.</div>
       )}

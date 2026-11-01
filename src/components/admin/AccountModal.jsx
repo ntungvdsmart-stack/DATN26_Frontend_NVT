@@ -1,3 +1,4 @@
+import ModalLayer from '../shared/ModalLayer';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { X, Save, Shield, User, Loader2, AlertCircle } from 'lucide-react';
@@ -54,15 +55,17 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
   };
 
   const validate = () => {
-    if (!formData.full_name.trim()) return 'Vui lòng nhập họ và tên';
-    if (!isEdit && !formData.email.trim()) return 'Vui lòng nhập email';
-    if (!isEdit && (!formData.password || formData.password.length < 6)) return 'Mật khẩu phải từ 6 ký tự';
-    if (formData.role_id === 2 && !formData.branch_id) return 'Vui lòng chọn chi nhánh cho nhân viên';
+    if (formData.full_name.trim().length < 2 || formData.full_name.length > 150) return 'Họ tên từ 2 đến 150 ký tự';
+    if (!isEdit && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email) || formData.email.length > 150)) return 'Email không hợp lệ';
+    if (formData.phone && !/^(0\d{9}|\+84\d{9})$/.test(formData.phone)) return 'Số điện thoại không hợp lệ';
+    if (!isEdit && (formData.password.length < 8 || new TextEncoder().encode(formData.password).length > 72)) return 'Mật khẩu từ 8 ký tự, tối đa 72 byte';
+    if (formData.role_id !== 1 && !formData.branch_id) return 'Vui lòng chọn chi nhánh cho nhân viên';
     return null;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isLoading) return;
     const error = validate();
     if (error) {
       setErrorMsg(error);
@@ -79,7 +82,8 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
         const updateData = {
           full_name: formData.full_name,
           phone: formData.phone,
-          role_id: formData.role_id
+          role_id: formData.role_id,
+          branch_id: formData.branch_id
         };
         res = await accountApi.update(account.account_id, updateData);
       } else {
@@ -100,7 +104,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <ModalLayer onClose={onClose} label="Tài khoản"><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
       <motion.div 
         initial={{ opacity: 0 }}
@@ -158,13 +162,13 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
                 <label className={`flex items-center gap-2 p-3 border rounded-xl cursor-pointer transition-all ${formData.role_id === 2 ? 'border-primary bg-primary/5 text-primary' : 'border-border hover:bg-muted/50'}`}>
                   <input type="radio" name="role_id" value={2} checked={formData.role_id === 2} onChange={handleChange} className="hidden" />
                   <User className="w-5 h-5" />
-                  <div className="font-bold text-sm">Nhân viên (Staff)</div>
+                  <div className="font-bold text-sm">Nhân viên</div>
                 </label>
               </div>
             </div>
 
             {/* Chi nhánh (Chỉ hiện khi là Staff) */}
-            {formData.role_id === 2 && (
+            {formData.role_id !== 1 && (
               <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Thuộc chi nhánh *</label>
                 <select 
@@ -185,7 +189,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Họ và tên *</label>
                 <input 
-                  type="text" name="full_name" required value={formData.full_name} onChange={handleChange}
+                  type="text" name="full_name" minLength={2} maxLength={150} required value={formData.full_name} onChange={handleChange}
                   className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   placeholder="VD: Nguyễn Văn A"
                 />
@@ -193,7 +197,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Số điện thoại</label>
                 <input 
-                  type="tel" name="phone" value={formData.phone} onChange={handleChange}
+                  type="tel" name="phone" maxLength={20} pattern="(0[0-9]{9}|[+]84[0-9]{9})" value={formData.phone} onChange={handleChange}
                   className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   placeholder="Không bắt buộc"
                 />
@@ -205,7 +209,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
               <div className="space-y-1.5">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Email {isEdit ? '(Không thể sửa)' : '*'}</label>
                 <input 
-                  type="email" name="email" required={!isEdit} disabled={isEdit} value={formData.email} onChange={handleChange}
+                  type="email" name="email" maxLength={150} required={!isEdit} disabled={isEdit} value={formData.email} onChange={handleChange}
                   className={`w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none transition-all ${isEdit ? 'opacity-50 cursor-not-allowed bg-muted/50' : 'focus:border-primary focus:ring-1 focus:ring-primary'}`}
                   placeholder="name@example.com"
                 />
@@ -216,7 +220,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
               <div className="space-y-1.5 pt-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Mật khẩu khởi tạo *</label>
                 <input 
-                  type="password" name="password" required={!isEdit} minLength={6} value={formData.password} onChange={handleChange}
+                  type="password" name="password" minLength={8} maxLength={72} required={!isEdit} value={formData.password} onChange={handleChange}
                   className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                   placeholder="Tối thiểu 6 ký tự"
                 />
@@ -246,7 +250,7 @@ const AccountModal = ({ account, onClose, onSuccess }) => {
           </button>
         </div>
       </motion.div>
-    </div>
+    </div></ModalLayer>
   );
 };
 

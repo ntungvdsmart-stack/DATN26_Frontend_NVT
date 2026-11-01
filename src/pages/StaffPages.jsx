@@ -1,9 +1,15 @@
-import React, { useState, useEffect } from 'react';
-import { dummyCustomers } from '../utils/dummyData';
-import { Search, Eye, Phone, Mail, Star, Loader2, Edit2, CheckCircle2, X, Printer, MapPin, Trash2 } from 'lucide-react';
+import OrderBranchChoices from '../components/admin/OrderBranchChoices';
+import StaffOrderStats from '../components/admin/StaffOrderStats';
+import { useRealtimeEvent } from '../lib/useRealtimeEvent';
+import { useLocation } from 'react-router-dom';
+import TableHeading from '../components/shared/TableHeading';
+import ModalLayer from '../components/shared/ModalLayer';
+import Pagination from '../components/shared/Pagination';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, Phone, Mail, Star, Loader2, CheckCircle2, X, Printer, MapPin, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+
 import orderApi from '../api/orderApi';
 import customerApi from '../api/customerApi';
 import InvoiceTemplate from '../components/admin/InvoiceTemplate';
@@ -13,36 +19,7 @@ import { useAuth } from '../context/AuthContext';
 /* ─────────────────────────────────────────── */
 /*  Shared Pagination                         */
 /* ─────────────────────────────────────────── */
-const Pagination = ({ page, totalPages, onChange }) => (
-  <div className="flex items-center justify-center gap-2 mt-8">
-    <button
-      onClick={() => onChange(Math.max(1, page - 1))}
-      disabled={page === 1}
-      className="w-9 h-9 flex items-center justify-center border border-border rounded-full disabled:opacity-30 hover:bg-muted transition-colors"
-    >
-      <ChevronLeft size={15} />
-    </button>
-    {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-      <button
-        key={p}
-        onClick={() => onChange(p)}
-        className={cn(
-          'w-9 h-9 flex items-center justify-center rounded-full text-sm font-semibold transition-all',
-          p === page ? 'bg-foreground text-background' : 'border border-border hover:bg-muted'
-        )}
-      >
-        {p}
-      </button>
-    ))}
-    <button
-      onClick={() => onChange(Math.min(totalPages, page + 1))}
-      disabled={page === totalPages}
-      className="w-9 h-9 flex items-center justify-center border border-border rounded-full disabled:opacity-30 hover:bg-muted transition-colors"
-    >
-      <ChevronRight size={15} />
-    </button>
-  </div>
-);
+
 
 /* ─────────────────────────────────────────── */
 /*  Status Badge Colors                        */
@@ -87,7 +64,9 @@ export const OrderManagement = () => {
   const [counts, setCounts] = useState({});
   const [pagination, setPagination] = useState({ page: 1, limit: PAGE_SIZE_ORDERS, totalPages: 1, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const location = useLocation();
+  const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('search') || '');
+  useEffect(() => { setSearch(new URLSearchParams(location.search).get('search') || ''); setPage(1); }, [location.search]);
   const [filter, setFilter] = useState('Tất cả');
   const [page, setPage] = useState(1);
   const statuses = ['Tất cả', 'pending', 'confirmed', 'processing', 'shipping', 'completed', 'cancelled'];
@@ -98,6 +77,8 @@ export const OrderManagement = () => {
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [isAssigning, setIsAssigning] = useState(false);
   const [assignStep, setAssignStep] = useState(1);
+  const [loadingBranches, setLoadingBranches] = useState(false);
+  const [branchError, setBranchError] = useState('');
 
   const [debouncedSearch, setDebouncedSearch] = useState('');
   useEffect(() => {
@@ -108,27 +89,32 @@ export const OrderManagement = () => {
   const printRef = useRef(null);
   const [printingOrder, setPrintingOrder] = useState(null);
 
-  const fetchOrders = async () => {
+  const ordersRequest = useRef(0);
+  const fetchOrders = useCallback(async () => {
+    const request = ++ordersRequest.current;
     setIsLoading(true);
     try {
       const params = { page, limit: PAGE_SIZE_ORDERS, search: debouncedSearch };
       if (filter !== 'Tất cả') params.status = filter;
       const res = await orderApi.getAllAdmin(params);
-      if (res && res.success) {
+      if (res && res.success && request === ordersRequest.current) {
         setOrders(res.data.items || []);
         setCounts(res.data.counts || {});
         setPagination(res.data.pagination || { page: 1, limit: PAGE_SIZE_ORDERS, totalPages: 1, total: 0 });
+        if (page > Math.max(1, res.data.pagination?.totalPages || 1)) setPage(Math.max(1, res.data.pagination?.totalPages || 1));
       }
     } catch (err) {
       console.error(err);
     } finally {
-      setIsLoading(false);
+      if (request === ordersRequest.current) setIsLoading(false);
     }
-  };
+  }, [page, filter, debouncedSearch]);
 
   useEffect(() => {
     fetchOrders();
-  }, [page, filter, debouncedSearch]);
+  }, [fetchOrders]);
+
+  useRealtimeEvent('orders_changed', fetchOrders);
 
   const handleUpdateStatus = async (id, currentStatus) => {
     const nextStatusMap = {
@@ -155,20 +141,22 @@ export const OrderManagement = () => {
   };
 
   const handleOpenAssignModal = async (order) => {
+    if (order.branch_id || order.staff_id) return;
     setAssignModal(order);
     setBranchSuggestions([]);
     setSelectedBranchId('');
     setSelectedStaffId('');
     setAssignStep(1);
+    setLoadingBranches(true);
+    setBranchError('');
     try {
         const res = await orderApi.getBranchSuggestions(order.order_id);
         if(res && res.success) {
             setBranchSuggestions(res.data);
-            if (res.data.length > 0 && res.data[0].hasEnoughStock) setSelectedBranchId(res.data[0].branch_id);
         }
-    } catch(err) {
-        alert('Lỗi lấy danh sách gợi ý');
-    }
+    } catch (error) {
+        setBranchError(error.message || 'Không tải được chi nhánh. Đóng và thử lại.');
+    } finally { setLoadingBranches(false); }
   };
 
   const submitAssign = async () => {
@@ -200,7 +188,7 @@ export const OrderManagement = () => {
         } else {
           alert(res.message || 'Lỗi');
         }
-      } catch (err) {
+      } catch  {
         alert('Có lỗi xảy ra');
       }
     }
@@ -232,7 +220,7 @@ export const OrderManagement = () => {
       } else {
         alert('Không lấy được chi tiết đơn hàng');
       }
-    } catch (err) {
+    } catch  {
       alert('Lỗi khi lấy thông tin đơn hàng');
     }
   };
@@ -251,8 +239,9 @@ export const OrderManagement = () => {
         <p className="text-muted-foreground text-sm mt-1">{pagination.total} đơn hàng tổng cộng</p>
       </div>
 
+      {role === 'staff' && <StaffOrderStats />}
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {role === 'admin' && <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {Object.entries(statCounts).map(([label, count]) => {
           const colors = { 'Chờ xác nhận': 'text-purple-600', 'Đang xử lý': 'text-amber-600', 'Đang giao': 'text-blue-600', 'Hoàn thành / Đã giao': 'text-emerald-600' };
           return (
@@ -262,7 +251,7 @@ export const OrderManagement = () => {
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {/* Filter */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -290,8 +279,9 @@ export const OrderManagement = () => {
 
       {/* Table */}
       <div className="rounded-2xl border border-border overflow-hidden bg-card">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[640px]">
+        <TableHeading title={"Danh s\u00e1ch \u0111\u01a1n h\u00e0ng"} count={pagination.total} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table table-with-actions w-full text-sm min-w-[1000px]">
             <thead className="bg-muted/50 border-b border-border">
               <tr>
                 {['Mã đơn', 'Khách hàng', 'Địa chỉ', 'Ngày đặt', 'Kênh', 'Tổng tiền', 'Trạng thái', 'Thao tác'].map(h => (
@@ -326,7 +316,7 @@ export const OrderManagement = () => {
                       <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                         {new Date(order.created_at).toLocaleDateString('vi-VN')}
                       </td>
-                      <td className="px-4 py-3 text-center uppercase text-xs font-bold text-muted-foreground">{order.channel}</td>
+                      <td className="px-4 py-3"><span className="table-neutral-badge">{order.channel === 'pos' ? 'T\u1ea1i qu\u1ea7y' : 'Online'}</span></td>
                       <td className="px-4 py-3 font-semibold whitespace-nowrap text-primary">{Number(order.total_amount).toLocaleString('vi-VN')}đ</td>
                       <td className="px-4 py-3">
                         <span className={cn('px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap', statusColors[order.order_status])}>
@@ -334,8 +324,8 @@ export const OrderManagement = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {order.channel === 'online' && !order.branch_name && ['pending', 'confirmed'].includes(order.order_status) && (
+                        <div className="flex justify-end gap-2 flex-wrap">
+                          {role === 'admin' && order.channel === 'online' && !order.branch_id && !order.staff_id && !order.branch_name && ['pending', 'confirmed'].includes(order.order_status) && (
                             <button
                               onClick={() => handleOpenAssignModal(order)}
                               className="p-1.5 text-indigo-500 hover:bg-indigo-500/10 rounded-md transition-colors"
@@ -362,7 +352,7 @@ export const OrderManagement = () => {
                               <X size={16} />
                             </button>
                           )}
-                          {role === 'admin' && (
+                            {role === 'admin' && order.order_status === 'cancelled' && !['success','refunded'].includes(order.payment_status) && (
                             <button 
                               onClick={() => handleDeleteOrder(order.order_id)}
                               className="p-1.5 text-red-600 hover:bg-red-600/10 rounded-md transition-colors" 
@@ -393,13 +383,7 @@ export const OrderManagement = () => {
         <div className="text-center py-12 text-muted-foreground">Không tìm thấy đơn hàng nào.</div>
       )}
 
-      {pagination.totalPages > 1 && <Pagination page={page} totalPages={pagination.totalPages} onChange={setPage} />}
-
-      {pagination.total > 0 && (
-        <p className="text-center text-xs text-muted-foreground">
-          Hiển thị {(page - 1) * PAGE_SIZE_ORDERS + 1}–{Math.min(page * PAGE_SIZE_ORDERS, pagination.total)} trong {pagination.total} đơn
-        </p>
-      )}
+      <div className="admin-table-footer rounded-xl border border-border bg-card"><Pagination page={page} totalPages={pagination.totalPages} totalItems={pagination.total} pageSize={PAGE_SIZE_ORDERS} disabled={isLoading} onChange={setPage} /></div>
 
       {/* Component In Hóa Đơn (Bị ẩn, chỉ hiện khi in) */}
       <InvoiceTemplate ref={printRef} order={printingOrder} />
@@ -407,38 +391,16 @@ export const OrderManagement = () => {
       {/* Modal Phân công */}
       <AnimatePresence>
         {assignModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalLayer onClose={() => setAssignModal(null)}><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setAssignModal(null)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl bg-background border border-border rounded-2xl shadow-2xl p-6">
+            <motion.div role="dialog" aria-modal="true" aria-label="Phân công đơn hàng" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl max-h-[90dvh] overflow-y-auto bg-background border border-border rounded-2xl shadow-2xl p-6">
               <h2 className="text-xl font-bold mb-4">Phân công đơn hàng {assignModal.order_code}</h2>
               <div className="space-y-4">
+                {loadingBranches && <p role="status">Đang kiểm tra tồn kho và tính khoảng cách VietMap...</p>}
+                {branchError && <p role="alert" className="text-destructive">{branchError}</p>}
+                {!loadingBranches && !branchError && !branchSuggestions.length && <p>Chưa có chi nhánh hoạt động.</p>}
                 {assignStep === 1 ? (
-                  <div>
-                    <label className="text-sm font-semibold text-muted-foreground block mb-2">Bước 1: Chọn chi nhánh (Gợi ý theo khoảng cách)</label>
-                    <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
-                      {branchSuggestions.map(b => (
-                        <div 
-                          key={b.branch_id} 
-                          onClick={() => { if(b.hasEnoughStock) { setSelectedBranchId(b.branch_id); } }}
-                          className={cn("p-3 rounded-xl border cursor-pointer transition-all", 
-                            selectedBranchId === b.branch_id ? "border-primary bg-primary/5" : "border-border hover:border-foreground/30",
-                            !b.hasEnoughStock && "opacity-50 grayscale cursor-not-allowed"
-                          )}
-                        >
-                          <div className="flex justify-between items-start">
-                              <div>
-                                  <h3 className="font-bold">{b.branch_name}</h3>
-                                  <p className="text-xs text-muted-foreground mt-1">{b.address || 'Không có địa chỉ'}</p>
-                              </div>
-                              <div className="text-right">
-                                  {b.distance !== null && <p className="text-xs font-semibold text-primary">{Number(b.distance).toFixed(1)} km</p>}
-                                  {!b.hasEnoughStock && <p className="text-xs text-red-500 font-bold mt-1">Không đủ tồn kho</p>}
-                              </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                  <OrderBranchChoices branches={branchSuggestions} selectedId={selectedBranchId} address={assignModal.shipping_address_snapshot} onSelect={id => { setSelectedBranchId(id); setSelectedStaffId(''); }} />
                 ) : (
                   <div>
                     <label className="text-sm font-semibold text-muted-foreground block mb-2">Bước 2: Chọn nhân viên xử lý</label>
@@ -484,7 +446,7 @@ export const OrderManagement = () => {
                 )}
               </div>
             </motion.div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
     </div>
@@ -502,11 +464,7 @@ export const CustomerManagement = () => {
   const [page, setPage] = useState(1);
   const [rankFilter, setRankFilter] = useState('Tất cả');
 
-  useEffect(() => {
-    fetchCustomers();
-  }, []);
-
-  const fetchCustomers = async () => {
+  const fetchCustomers = useCallback(async () => {
     setIsLoading(true);
     try {
       const res = await customerApi.getAllCustomers();
@@ -528,7 +486,11 @@ export const CustomerManagement = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchCustomers();
+  }, [fetchCustomers]);
 
   const handleToggleStatus = async (id, currentStatus) => {
     if (window.confirm(`Bạn có chắc muốn ${currentStatus ? 'khóa' : 'mở khóa'} tài khoản này?`)) {
@@ -554,7 +516,8 @@ export const CustomerManagement = () => {
     return matchSearch && matchRank;
   });
 
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE_CUSTOMERS);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE_CUSTOMERS));
+  useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
   const paginated = filtered.slice((page - 1) * PAGE_SIZE_CUSTOMERS, page * PAGE_SIZE_CUSTOMERS);
 
   const totalRevenue = customers.reduce((s, c) => s + Number(c.total_spent || 0), 0);

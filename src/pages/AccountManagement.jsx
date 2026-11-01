@@ -1,6 +1,9 @@
+import TableHeading from '../components/shared/TableHeading';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Edit2, Trash2, Shield, User, Lock, Unlock, Mail, Phone, Loader2 } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { Search, Plus, Edit2, Shield, User, Lock, Unlock, Mail, Phone, Loader2 } from 'lucide-react';
 import accountApi from '../api/accountApi';
 import AccountModal from '../components/admin/AccountModal';
 
@@ -61,12 +64,14 @@ const AccountManagement = () => {
     acc.email?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const listPage = useListPagination(filteredAccounts, searchTerm);
+
   return (
-    <div className="p-8 space-y-8 min-h-screen bg-background/50">
+    <div className="p-1 sm:p-4 lg:p-6 space-y-5 sm:space-y-8 min-h-screen bg-background/50">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">
             <Shield className="w-8 h-8 text-primary" />
             Quản lý Tài khoản Nội bộ
           </h1>
@@ -100,8 +105,9 @@ const AccountManagement = () => {
 
       {/* Bảng dữ liệu */}
       <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <TableHeading title={"T\u00e0i kho\u1ea3n n\u1ed9i b\u1ed9"} count={filteredAccounts.length} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table table-with-actions w-full text-left border-collapse">
             <thead>
               <tr className="bg-muted/50 border-b border-border/50">
                 <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">Nhân viên</th>
@@ -126,7 +132,7 @@ const AccountManagement = () => {
                   </td>
                 </tr>
               ) : (
-                filteredAccounts.map((acc) => (
+                listPage.items.map((acc) => (
                   <tr key={acc.account_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors group">
                     <td className="p-4">
                       <div className="flex items-center gap-3">
@@ -152,7 +158,7 @@ const AccountManagement = () => {
                           acc.role_id === 1 ? 'bg-red-500/10 text-red-500' : 'bg-blue-500/10 text-blue-500'
                         }`}>
                           {acc.role_id === 1 ? <Shield className="w-3 h-3" /> : <User className="w-3 h-3" />}
-                          {acc.role_name}
+                          {acc.role_id === 1 ? 'Quản trị viên' : 'Nhân viên'}
                         </span>
                         {acc.role_id === 2 && acc.branch_name && (
                           <span className="text-[10px] text-muted-foreground font-semibold px-2 border border-border rounded bg-muted/50">
@@ -197,7 +203,8 @@ const AccountManagement = () => {
             </tbody>
           </table>
         </div>
-      </div>
+        {!isLoading && <div className="admin-table-footer"><Pagination {...listPage.paginationProps} /></div>}
+      </div> 
 
       {/* Modal Thêm/Sửa */}
       <AnimatePresence>

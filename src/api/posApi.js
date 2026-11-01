@@ -13,7 +13,7 @@ const posApi = {
   
   // Áp dụng khuyến mãi
   applyPromotion: (code, subtotal) => {
-    return axiosClient.post('/promotions/apply', { promo_code: code, subtotal });
+    return axiosClient.post('/promotions/apply', { code, subtotal, channel: 'pos' });
   }
 };
 

@@ -1,13 +1,21 @@
+import AdminDataTable from '../components/shared/AdminDataTable';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import ModalLayer from '../components/shared/ModalLayer';
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tags, Grid, Plus, Edit2, Trash2, Save, X, Loader2, Ruler, Palette, Shirt } from 'lucide-react';
+import { Tags, Grid, Plus, Edit2, Trash2, Save, X, Loader2, Ruler, Palette, Shirt, Search, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import productApi from '../api/productApi';
+import ProductImage from '../components/shared/ProductImage';
 
 const CategoryBrandManagement = () => {
   const [activeTab, setActiveTab] = useState('categories');
   const [data, setData] = useState({ categories: [], brands: [], sizes: [], colors: [], materials: [] });
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState('');
 
   // Modal
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -21,7 +29,7 @@ const CategoryBrandManagement = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchData = async () => {
-    setIsLoading(true);
+    setIsLoading(true); setLoadError('');
     try {
       const res = await productApi.getAttributes();
       if (res && res.success) {
@@ -33,8 +41,8 @@ const CategoryBrandManagement = () => {
           materials: res.data.materials || []
         });
       }
-    } catch (error) {
-      console.error(error);
+    } catch {
+      setLoadError('Không tải được dữ liệu. Vui lòng thử lại.');
     }
     setIsLoading(false);
   };
@@ -56,6 +64,9 @@ const CategoryBrandManagement = () => {
     if (activeTab === 'categories') {
       base.name = item ? item.category_name : '';
       base.parent_id = item ? (item.parent_id || '') : '';
+      base.image_url = item?.image_url || '';
+      base.is_featured = Boolean(item?.is_featured);
+      base.display_order = item?.display_order || 0;
     } else if (activeTab === 'brands') {
       base.name = item ? item.brand_name : '';
     } else if (activeTab === 'sizes') {
@@ -74,28 +85,30 @@ const CategoryBrandManagement = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
     setIsSaving(true);
     try {
       let res;
       if (activeTab === 'categories') {
-        if (!formData.name.trim()) { setIsSaving(false); return; }
-        const payload = { category_name: formData.name, parent_id: formData.parent_id || null };
+        if (!formData.name.trim()) { toast.error('Vui lòng nhập tên danh mục'); setIsSaving(false); return; }
+        const payload = { category_name: formData.name.trim(), parent_id: formData.parent_id || null, image_url: formData.image_url?.trim() || null, is_featured: Boolean(formData.is_featured), display_order: Number(formData.display_order || 0) };
+        if (payload.is_featured && !payload.image_url) { toast.error('Hãy thêm ảnh cho danh mục nổi bật'); return; }
         res = editItem ? await productApi.updateCategory(editItem.category_id, payload) : await productApi.createCategory(payload);
       } else if (activeTab === 'brands') {
-        if (!formData.name.trim()) { setIsSaving(false); return; }
-        const payload = { brand_name: formData.name };
+        if (!formData.name.trim()) { toast.error('Vui lòng nhập tên thương hiệu'); setIsSaving(false); return; }
+        const payload = { brand_name: formData.name.trim() };
         res = editItem ? await productApi.updateBrand(editItem.brand_id, payload) : await productApi.createBrand(payload);
       } else if (activeTab === 'sizes') {
-        if (!formData.size_label.trim()) { setIsSaving(false); return; }
+        if (!formData.size_label.trim()) { toast.error('Vui lòng nhập kích cỡ size'); setIsSaving(false); return; }
         const payload = { size_value: formData.size_label.trim() };
         res = editItem ? await productApi.updateSize(editItem.size_id, payload) : await productApi.createSize(payload);
       } else if (activeTab === 'colors') {
-        if (!formData.color_name.trim()) { setIsSaving(false); return; }
-        const payload = { color_name: formData.color_name, hex_code: formData.hex_code || null };
+        if (!formData.color_name.trim()) { toast.error('Vui lòng nhập tên màu sắc'); setIsSaving(false); return; }
+        const payload = { color_name: formData.color_name.trim(), hex_code: formData.hex_code || null };
         res = editItem ? await productApi.updateColor(editItem.color_id, payload) : await productApi.createColor(payload);
       } else if (activeTab === 'materials') {
-        if (!formData.material_name.trim()) { setIsSaving(false); return; }
-        const payload = { material_name: formData.material_name };
+        if (!formData.material_name.trim()) { toast.error('Vui lòng nhập tên chất liệu'); setIsSaving(false); return; }
+        const payload = { material_name: formData.material_name.trim() };
         res = editItem ? await productApi.updateMaterial(editItem.material_id, payload) : await productApi.createMaterial(payload);
       }
       if (res && res.success) {
@@ -113,7 +126,9 @@ const CategoryBrandManagement = () => {
   };
 
   const handleDelete = async (id) => {
+    if (isDeleting) return;
     if (!window.confirm('Bạn có chắc chắn muốn xóa?')) return;
+    setIsDeleting(true);
     try {
       let res;
       if (activeTab === 'categories') res = await productApi.deleteCategory(id);
@@ -130,151 +145,24 @@ const CategoryBrandManagement = () => {
       }
     } catch (error) {
       toast.error(error.response?.data?.message || 'Có lỗi xảy ra');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
-  // ── Render bảng theo tab ──
-  const renderTable = () => {
-    if (activeTab === 'sizes') return renderSizesTable();
-    if (activeTab === 'colors') return renderColorsTable();
-    if (activeTab === 'materials') return renderMaterialsTable();
-    return renderCatBrandTable();
-  };
-
-  const renderCatBrandTable = () => {
-    const isCat = activeTab === 'categories';
-    const list = isCat ? data.categories : data.brands;
-    return (
-      <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-muted/50 border-b border-border/50">
-              <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground w-20">ID</th>
-              <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">{isCat ? 'Tên danh mục' : 'Tên thương hiệu'}</th>
-              {isCat && <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">Danh mục cha</th>}
-              <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground text-right">Thao tác</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr><td colSpan={isCat ? 4 : 3} className="p-12 text-center text-muted-foreground"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />Đang tải...</td></tr>
-            ) : list.length === 0 ? (
-              <tr><td colSpan={isCat ? 4 : 3} className="p-12 text-center text-muted-foreground">Chưa có dữ liệu</td></tr>
-            ) : list.map((item) => (
-              <tr key={isCat ? item.category_id : item.brand_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-                <td className="p-4 font-mono text-sm text-muted-foreground">#{isCat ? item.category_id : item.brand_id}</td>
-                <td className="p-4 font-bold">{isCat ? item.category_name : item.brand_name}</td>
-                {isCat && <td className="p-4 text-sm text-muted-foreground">{item.parent_name ? <span className="px-2 py-1 bg-muted rounded-md">{item.parent_name}</span> : '-'}</td>}
-                <td className="p-4 text-right">
-                  <button onClick={() => openModal(item)} className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors mr-2"><Edit2 size={16} /></button>
-                  <button onClick={() => handleDelete(isCat ? item.category_id : item.brand_id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  const renderSizesTable = () => (
-    <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-      <table className="w-full text-left border-collapse">
-        <thead>
-          <tr className="bg-muted/50 border-b border-border/50">
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground w-20">ID</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">Tên Size</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground text-right">Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr><td colSpan={3} className="p-12 text-center text-muted-foreground"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />Đang tải...</td></tr>
-          ) : data.sizes.length === 0 ? (
-            <tr><td colSpan={3} className="p-12 text-center text-muted-foreground">Chưa có Size nào.</td></tr>
-          ) : data.sizes.map((item) => (
-            <tr key={item.size_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-              <td className="p-4 font-mono text-sm text-muted-foreground">#{item.size_id}</td>
-              <td className="p-4"><span className="inline-block px-3 py-1 bg-primary/10 text-primary font-black text-sm rounded-lg">{item.size_value}</span></td>
-              <td className="p-4 text-right">
-                <button onClick={() => openModal(item)} className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors mr-2"><Edit2 size={16} /></button>
-                <button onClick={() => handleDelete(item.size_id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const renderColorsTable = () => (
-    <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-      <table className="w-full text-left border-collapse">
-        <thead>
-          <tr className="bg-muted/50 border-b border-border/50">
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground w-20">ID</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">Tên màu</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">Mã màu (HEX)</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">Xem trước</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground text-right">Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr><td colSpan={5} className="p-12 text-center text-muted-foreground"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />Đang tải...</td></tr>
-          ) : data.colors.length === 0 ? (
-            <tr><td colSpan={5} className="p-12 text-center text-muted-foreground">Chưa có màu nào.</td></tr>
-          ) : data.colors.map((item) => (
-            <tr key={item.color_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-              <td className="p-4 font-mono text-sm text-muted-foreground">#{item.color_id}</td>
-              <td className="p-4 font-bold">{item.color_name}</td>
-              <td className="p-4 font-mono text-sm text-muted-foreground">{item.hex_code || '—'}</td>
-              <td className="p-4">
-                <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-lg border border-border shadow-sm" style={{ backgroundColor: item.hex_code || '#ccc' }} />
-                  <span className="text-xs text-muted-foreground">{item.color_name}</span>
-                </div>
-              </td>
-              <td className="p-4 text-right">
-                <button onClick={() => openModal(item)} className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors mr-2"><Edit2 size={16} /></button>
-                <button onClick={() => handleDelete(item.color_id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-
-  const renderMaterialsTable = () => (
-    <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-      <table className="w-full text-left border-collapse">
-        <thead>
-          <tr className="bg-muted/50 border-b border-border/50">
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground w-20">ID</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground">Tên chất liệu</th>
-            <th className="p-4 font-bold text-sm uppercase tracking-wider text-muted-foreground text-right">Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          {isLoading ? (
-            <tr><td colSpan={3} className="p-12 text-center text-muted-foreground"><Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />Đang tải...</td></tr>
-          ) : data.materials.length === 0 ? (
-            <tr><td colSpan={3} className="p-12 text-center text-muted-foreground">Chưa có chất liệu nào.</td></tr>
-          ) : data.materials.map((item) => (
-            <tr key={item.material_id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
-              <td className="p-4 font-mono text-sm text-muted-foreground">#{item.material_id}</td>
-              <td className="p-4 font-bold">{item.material_name}</td>
-              <td className="p-4 text-right">
-                <button onClick={() => openModal(item)} className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors mr-2"><Edit2 size={16} /></button>
-                <button onClick={() => handleDelete(item.material_id)} className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"><Trash2 size={16} /></button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  const normalize = value => String(value || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/Đ/g, 'D').toLowerCase();
+  const idField = { categories: 'category_id', brands: 'brand_id', sizes: 'size_id', colors: 'color_id', materials: 'material_id' }[activeTab];
+  const nameField = { categories: 'category_name', brands: 'brand_name', sizes: 'size_value', colors: 'color_name', materials: 'material_name' }[activeTab];
+  const filteredRows = (data[activeTab] || []).filter(row => normalize(`${row[nameField]} ${row.parent_name || ''} ${row.hex_code || ''}`).includes(normalize(search.trim())));
+  const listPage = useListPagination(filteredRows, `${activeTab}:${search}`);
+  const columns = [
+    { key: 'id', label: 'Mã', className: 'table-id', render: row => <span className="table-id-tag">#{row[idField]}</span> },
+    { key: 'name', label: tabConfig[activeTab].label, render: row => <div className="flex items-center gap-3"><span className="table-record-icon">{activeTab === 'colors' ? <span className="w-5 h-5 rounded-full border border-black/10" style={{ backgroundColor: row.hex_code || '#ccc' }} /> : (() => { const Icon = tabConfig[activeTab].icon; return <Icon size={17} strokeWidth={1.6} />; })()}</span><span className="font-medium break-words">{row[nameField]}</span></div> },
+    ...(activeTab === 'categories' ? [{ key: 'parent', label: 'Danh mục cha', render: row => row.parent_name ? <span className="table-neutral-badge">{row.parent_name}</span> : <span className="text-xs text-muted-foreground">Danh mục gốc</span> }] : []),
+    ...(activeTab === 'categories' ? [{ key: 'featured', label: 'Trang chủ', render: row => row.is_featured ? <span className="table-neutral-badge">Nổi bật · Thứ tự {row.display_order}</span> : <span className="text-xs text-muted-foreground">Ẩn</span> }] : []),
+    ...(activeTab === 'colors' ? [{ key: 'hex_code', label: 'Mã màu', render: row => <code className="table-neutral-badge">{row.hex_code || '-' }</code> }] : []),
+    { key: 'actions', label: 'Thao tác', className: 'table-actions', render: row => <div className="flex justify-end gap-2"><button type="button" onClick={() => openModal(row)} className="table-edit" aria-label={`Sửa ${row[nameField]}`} title="Chỉnh sửa"><Edit2 size={15} /><span>Sửa</span></button><button type="button" disabled={isDeleting} onClick={() => handleDelete(row[idField])} className="table-delete" aria-label={`Xóa ${row[nameField]}`} title="Xóa"><Trash2 size={15} /></button></div> }
+  ];
 
   // ── Modal form fields ──
   const renderModalFields = () => {
@@ -282,23 +170,42 @@ const CategoryBrandManagement = () => {
       <>
         <div className="space-y-1.5">
           <label className="text-xs font-bold uppercase text-muted-foreground">Tên danh mục *</label>
-          <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
+          <input type="text" required maxLength={100} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-bold uppercase text-muted-foreground">Danh mục cha</label>
           <select value={formData.parent_id} onChange={e => setFormData({...formData, parent_id: e.target.value})} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary">
             <option value="">-- Không có (Danh mục gốc) --</option>
-            {data.categories.filter(c => c.category_id !== (editItem?.category_id || -1)).map(c => (
+            {data.categories.filter(category => {
+              const visited = new Set();
+              let current = category;
+              while (current) {
+                if (current.category_id === editItem?.category_id || visited.has(current.category_id)) return false;
+                visited.add(current.category_id);
+                current = data.categories.find(parent => parent.category_id === current.parent_id);
+              }
+              return true;
+            }).map(c => (
               <option key={c.category_id} value={c.category_id}>{c.category_name}</option>
             ))}
           </select>
+        </div>
+        <label className="flex items-center gap-3 text-sm font-medium"><input type="checkbox" checked={Boolean(formData.is_featured)} onChange={e => setFormData({...formData, is_featured: e.target.checked})} />Hiển thị trong Danh mục nổi bật trên trang chủ</label>
+        <div className="space-y-2">
+          <label className="text-sm font-medium" htmlFor="category-image">URL ảnh danh mục</label>
+          <input id="category-image" type="url" maxLength={1000} required={Boolean(formData.is_featured)} placeholder="https://..." value={formData.image_url || ''} onChange={e => setFormData({...formData, image_url: e.target.value})} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg" />
+          {formData.image_url && <ProductImage src={formData.image_url} alt="Xem trước ảnh danh mục" className="w-24 aspect-[3/4] object-cover rounded-lg border border-border" />}
+        </div>
+        <div className="space-y-2">
+          <label htmlFor="category-order" className="text-sm font-medium">Thứ tự hiển thị (số nhỏ đứng trước)</label>
+          <input id="category-order" type="number" min={0} max={9999} step={1} required value={formData.display_order ?? 0} onChange={e => setFormData({...formData, display_order: e.target.value})} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg" />
         </div>
       </>
     );
     if (activeTab === 'brands') return (
       <div className="space-y-1.5">
         <label className="text-xs font-bold uppercase text-muted-foreground">Tên thương hiệu *</label>
-        <input type="text" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
+        <input type="text" required maxLength={100} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
       </div>
     );
     if (activeTab === 'sizes') {
@@ -306,7 +213,7 @@ const CategoryBrandManagement = () => {
         <>
           <div className="space-y-1.5">
             <label className="text-xs font-bold uppercase text-muted-foreground">Tên Size *</label>
-            <input type="text" required value={formData.size_label} onChange={e => setFormData({...formData, size_label: e.target.value.toUpperCase()})} placeholder="VD: S, M, L, XL, XXL, 38, 39..." className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary font-bold uppercase" />
+            <input type="text" required maxLength={20} value={formData.size_label} onChange={e => setFormData({...formData, size_label: e.target.value.toUpperCase()})} placeholder="VD: S, M, L, XL, XXL, 38, 39..." className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary font-bold uppercase" />
           </div>
           <div className="p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
             <p className="text-xs text-amber-700">💡 <strong>Mô tả cân nặng / chiều cao</strong> sẽ nhập riêng cho từng sản phẩm khi tạo biến thể (vì áo, quần, giày có mô tả size khác nhau).</p>
@@ -318,7 +225,7 @@ const CategoryBrandManagement = () => {
       <>
         <div className="space-y-1.5">
           <label className="text-xs font-bold uppercase text-muted-foreground">Tên màu *</label>
-          <input type="text" required value={formData.color_name} onChange={e => setFormData({...formData, color_name: e.target.value})} placeholder="VD: Đen, Trắng, Đỏ, Navy..." className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
+          <input type="text" required maxLength={50} value={formData.color_name} onChange={e => setFormData({...formData, color_name: e.target.value})} placeholder="VD: Đen, Trắng, Đỏ, Navy..." className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-bold uppercase text-muted-foreground">Mã màu HEX</label>
@@ -343,18 +250,18 @@ const CategoryBrandManagement = () => {
     if (activeTab === 'materials') return (
       <div className="space-y-1.5">
         <label className="text-xs font-bold uppercase text-muted-foreground">Tên chất liệu *</label>
-        <input type="text" required value={formData.material_name} onChange={e => setFormData({...formData, material_name: e.target.value})} placeholder="VD: Cotton, Polyester, Lụa, Denim..." className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
+        <input type="text" required maxLength={100} value={formData.material_name} onChange={e => setFormData({...formData, material_name: e.target.value})} placeholder="VD: Cotton, Polyester, Lụa, Denim..." className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
       </div>
     );
     return null;
   };
 
   return (
-    <div className="p-8 space-y-8 min-h-screen bg-background/50">
+    <div className="p-1 sm:p-4 lg:p-6 space-y-5 sm:space-y-8 min-h-screen bg-background/50">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
+          <h1 className="text-2xl sm:text-3xl font-black tracking-tight flex items-center gap-3">
             <Tags className="w-8 h-8 text-primary" />
             Thuộc tính sản phẩm
           </h1>
@@ -369,7 +276,7 @@ const CategoryBrandManagement = () => {
       {/* Tabs */}
       <div className="flex gap-1 p-1 bg-muted/50 w-fit rounded-xl border border-border flex-wrap">
         {Object.entries(tabConfig).map(([key, { label, icon: Icon }]) => (
-          <button key={key} onClick={() => setActiveTab(key)}
+          <button key={key} onClick={() => { setActiveTab(key); setSearch(''); }}
             className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold transition-all ${
               activeTab === key ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
             }`}>
@@ -378,12 +285,16 @@ const CategoryBrandManagement = () => {
         ))}
       </div>
 
-      {renderTable()}
+      <section className="admin-table-panel">
+        <div className="admin-table-toolbar"><div><h2 className="font-semibold text-sm">{tabConfig[activeTab].label}</h2><p className="text-xs text-muted-foreground mt-1">{filteredRows.length} / {(data[activeTab] || []).length} bản ghi</p></div><div className="flex items-center gap-2 w-full sm:w-auto"><label className="relative block flex-1 sm:w-64"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" /><input aria-label="Tìm thuộc tính" value={search} onChange={event => setSearch(event.target.value)} placeholder="Tìm theo tên..." maxLength={150} className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg" /></label><button type="button" disabled={isLoading} onClick={fetchData} aria-label="Tải lại" className="table-icon-button"><RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} /></button></div></div>
+        {loadError ? <div role="alert" className="p-8 text-center text-sm text-destructive">{loadError}<button onClick={fetchData} className="block mx-auto mt-3 underline">Thử lại</button></div> : <AdminDataTable columns={columns} rows={listPage.items} rowKey={row => row[idField]} loading={isLoading} caption={tabConfig[activeTab].label} emptyMessage={search ? 'Không có kết quả phù hợp' : 'Chưa có dữ liệu'} />}
+        {!isLoading && !loadError && filteredRows.length > 0 && <div className="admin-table-footer"><Pagination {...listPage.paginationProps} /></div>}
+      </section>
 
       {/* Modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalLayer onClose={closeModal} label="Danh mục và thuộc tính"><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeModal} />
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-md bg-background border border-border rounded-2xl shadow-2xl overflow-hidden">
               <div className="p-6 border-b border-border/50 flex justify-between items-center bg-muted/30">
@@ -400,7 +311,7 @@ const CategoryBrandManagement = () => {
                 </div>
               </form>
             </motion.div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
     </div>

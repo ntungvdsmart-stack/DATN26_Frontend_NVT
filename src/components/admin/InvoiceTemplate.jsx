@@ -1,6 +1,9 @@
-import React, { forwardRef } from 'react';
+import React, { forwardRef, useEffect, useState } from 'react';
+import configApi from '../../api/configApi';
 
 const InvoiceTemplate = forwardRef(({ order }, ref) => {
+  const [store, setStore] = useState({});
+  useEffect(() => { configApi.getSettings().then(result => setStore(result.data)).catch(() => {}); }, []);
   if (!order) return null;
 
   return (
@@ -12,9 +15,9 @@ const InvoiceTemplate = forwardRef(({ order }, ref) => {
       
       {/* Header */}
       <div className="text-center border-b border-dashed border-gray-400 pb-3 mb-3">
-        <h1 className="text-xl font-bold uppercase tracking-widest mb-1">FashionOS</h1>
-        <p className="text-xs">Số 1 Đại Cồ Việt, Hai Bà Trưng, Hà Nội</p>
-        <p className="text-xs">SĐT: 0123.456.789</p>
+        <h1 className="text-xl font-bold uppercase tracking-widest mb-1">{store.store_name || 'FashionOS'}</h1>
+        {store.store_address && <p className="text-xs">{store.store_address}</p>}
+        {store.store_phone && <p className="text-xs">SĐT: {store.store_phone}</p>}
         <h2 className="text-lg font-bold mt-2">HÓA ĐƠN BÁN HÀNG</h2>
       </div>
 
@@ -78,6 +81,8 @@ const InvoiceTemplate = forwardRef(({ order }, ref) => {
           <span>Giảm giá:</span>
           <span>{Number(order.discount_amount || 0).toLocaleString('vi-VN')}đ</span>
         </div>
+        {Number(order.loyalty_discount) > 0 && <div className="flex justify-between"><span>Ưu đãi thành viên:</span><span>-{Number(order.loyalty_discount).toLocaleString('vi-VN')}đ</span></div>}
+        {Number(order.shipping_fee) > 0 && <div className="flex justify-between"><span>Phí vận chuyển:</span><span>{Number(order.shipping_fee).toLocaleString('vi-VN')}đ</span></div>}
         <div className="flex justify-between font-bold text-sm mt-2 pt-2 border-t border-dashed border-gray-400">
           <span>TỔNG CỘNG:</span>
           <span>{Number(order.total_amount || 0).toLocaleString('vi-VN')}đ</span>

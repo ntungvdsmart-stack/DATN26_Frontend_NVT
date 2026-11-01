@@ -1,9 +1,17 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import TableHeading from '../components/shared/TableHeading';
+import Pagination from '../components/shared/Pagination';
+import useListPagination from '../lib/useListPagination';
+import ProductImage from '../components/shared/ProductImage';
+import ModalLayer from '../components/shared/ModalLayer';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Package, Search, Edit2, Save, X, Loader2, AlertTriangle, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
+import { toast } from 'sonner';
 import inventoryApi from '../api/inventoryApi';
+import { useAuth } from '../context/AuthContext';
 
 const InventoryManagement = () => {
+  const { can, role, user } = useAuth();
   const [inventory, setInventory] = useState([]);
   const [branches, setBranches] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -14,11 +22,15 @@ const InventoryManagement = () => {
 
   // Edit State
   const [editItem, setEditItem] = useState(null);
+  const [receiving, setReceiving] = useState(false);
   const [newQuantity, setNewQuantity] = useState('');
+  const [reason, setReason] = useState('');
+  const [loadError, setLoadError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchInventory = React.useCallback(async () => {
     setIsLoading(true);
+    setLoadError('');
     try {
       const res = await inventoryApi.getInventory(selectedBranch);
       if (res && res.success) {
@@ -26,7 +38,7 @@ const InventoryManagement = () => {
         setBranches(res.data.branches);
       }
     } catch (error) {
-      console.error(error);
+      setLoadError(error.message || 'Không thể tải tồn kho');
     }
     setIsLoading(false);
   }, [selectedBranch]);
@@ -37,15 +49,18 @@ const InventoryManagement = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (isSaving) return;
+    if (newQuantity === '' || !Number.isSafeInteger(Number(newQuantity)) || Number(newQuantity) < (receiving ? 1 : 0) || !reason.trim()) { toast.error('Nhập số lượng nguyên hợp lệ và lý do nhập/điều chỉnh'); return; }
     setIsSaving(true);
     try {
-      const res = await inventoryApi.updateQuantity(editItem.inventory_id, Number(newQuantity), 'Chỉnh sửa thủ công');
+      const res = receiving ? await inventoryApi.receiveStock(editItem, Number(newQuantity), reason.trim()) : await inventoryApi.updateQuantity(editItem.inventory_id, Number(newQuantity), reason.trim(), editItem.quantity, editItem);
       if (res && res.success) {
+        toast.success('Đã cập nhật tồn kho');
         setEditItem(null);
         fetchInventory();
       }
     } catch (error) {
-      alert(error.response?.data?.message || 'Lỗi hệ thống');
+      toast.error(error.response?.data?.message || error.message || 'Lỗi hệ thống');
     }
     setIsSaving(false);
   };
@@ -69,7 +84,7 @@ const InventoryManagement = () => {
         });
       }
       const group = map.get(pId);
-      group.totalQuantity += item.quantity;
+      group.totalQuantity += Number(item.quantity);
       group.variants.push(item);
     });
     return Array.from(map.values());
@@ -82,8 +97,10 @@ const InventoryManagement = () => {
     setExpandedProducts(newSet);
   };
 
+  const listPage = useListPagination(groupedInventory, searchTerm + '|' + selectedBranch);
+
   return (
-    <div className="p-8 space-y-8 min-h-screen bg-background/50">
+    <div className="p-1 sm:p-4 space-y-6 min-h-screen bg-background/50">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight flex items-center gap-3">
@@ -107,11 +124,12 @@ const InventoryManagement = () => {
         </div>
         <div className="flex gap-2 w-full sm:w-auto">
           <select 
-            value={selectedBranch} 
+            value={role === 'staff' ? user.branch_id || '' : selectedBranch}
+            disabled={role === 'staff'}
             onChange={e => setSelectedBranch(e.target.value)}
             className="w-full sm:w-auto px-4 py-2.5 bg-background border border-border rounded-xl focus:border-primary outline-none"
           >
-            <option value="">Tất cả chi nhánh</option>
+            {role === 'admin' && <option value="">Tất cả chi nhánh</option>}
             {branches.map(b => (
               <option key={b.branch_id} value={b.branch_id}>{b.branch_name}</option>
             ))}
@@ -119,9 +137,11 @@ const InventoryManagement = () => {
         </div>
       </div>
 
+      {loadError && <div role="alert" className="rounded-xl border border-destructive p-4 text-destructive">{loadError} <button onClick={fetchInventory} className="underline ml-3">Thử lại</button></div>}
       <div className="glass-panel rounded-2xl overflow-hidden border border-border/50">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+        <TableHeading title={"T\u1ed3n kho theo s\u1ea3n ph\u1ea9m"} count={groupedInventory.length} loading={isLoading} />
+        <div className="admin-table-scroll overflow-x-auto">
+          <table className="admin-data-table table-with-actions w-full text-left border-collapse min-w-[800px]">
             <thead>
               <tr className="bg-muted/50 border-b border-border/50">
                 <th className="p-4 font-bold text-sm uppercase text-muted-foreground w-1/2">Sản phẩm</th>
@@ -144,7 +164,7 @@ const InventoryManagement = () => {
                   </td>
                 </tr>
               ) : (
-                groupedInventory.map((group) => (
+                listPage.items.map((group) => (
                   <React.Fragment key={group.product_id}>
                     {/* Header Row cho 1 Sản phẩm */}
                     <tr 
@@ -153,7 +173,7 @@ const InventoryManagement = () => {
                     >
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <img src={group.image || 'https://via.placeholder.com/40'} alt="" className="w-12 h-12 rounded-lg object-cover bg-muted border border-border/50 shadow-sm" />
+                          <ProductImage src={group.image} alt="" className="w-12 h-12 rounded-lg object-cover bg-muted border border-border/50 shadow-sm" />
                           <div>
                             <p className="font-bold text-foreground text-sm uppercase tracking-wide">{group.product_name}</p>
                             <p className="text-xs text-muted-foreground mt-0.5">{group.variants.length} biến thể</p>
@@ -174,7 +194,7 @@ const InventoryManagement = () => {
                     <AnimatePresence>
                       {expandedProducts.has(group.product_id) && group.variants.map(item => (
                         <motion.tr 
-                          key={item.inventory_id} 
+                          key={`${item.variant_id}-${item.branch_id}`} 
                           initial={{ opacity: 0, height: 0 }} 
                           animate={{ opacity: 1, height: 'auto' }} 
                           exit={{ opacity: 0, height: 0 }}
@@ -205,13 +225,13 @@ const InventoryManagement = () => {
                             </div>
                           </td>
                           <td className="p-4 text-right align-middle">
-                            <button 
-                              onClick={() => { setEditItem(item); setNewQuantity(item.quantity); }}
+                            {can('inventory.manage') && (role === 'admin' || Number(user.branch_id) === Number(item.branch_id)) && <><button onClick={() => { setReceiving(true); setEditItem(item); setNewQuantity(''); setReason(''); }} className="px-3 py-2 mr-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold">Nhập hàng</button><button
+                              onClick={() => { setReceiving(false); setEditItem(item); setNewQuantity(item.quantity); setReason(''); }}
                               className="p-2 text-primary hover:bg-primary/10 rounded-lg transition-colors border border-transparent hover:border-primary/20 bg-background/50"
                               title="Cập nhật tồn kho"
                             >
                               <Edit2 size={16} />
-                            </button>
+                            </button></>}
                           </td>
                         </motion.tr>
                       ))}
@@ -222,15 +242,16 @@ const InventoryManagement = () => {
             </tbody>
           </table>
         </div>
-      </div>
+        {!isLoading && <div className="admin-table-footer"><Pagination {...listPage.paginationProps} /></div>}
+      </div> 
 
       <AnimatePresence>
         {editItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalLayer onClose={() => setEditItem(null)} label="Nhập và điều chỉnh kho"><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setEditItem(null)} />
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-sm bg-background border border-border rounded-2xl shadow-2xl overflow-hidden p-6">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-bold">Cập nhật Tồn kho</h2>
+                <h2 className="text-lg font-bold">{receiving ? 'Nhập hàng vào chi nhánh' : 'Cập nhật tồn kho'}</h2>
                 <button onClick={() => setEditItem(null)} className="p-1.5 text-muted-foreground hover:bg-muted rounded-full"><X size={18} /></button>
               </div>
               
@@ -241,9 +262,13 @@ const InventoryManagement = () => {
 
               <form onSubmit={handleSave} className="space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-muted-foreground">Số lượng mới *</label>
-                  <input type="number" min="0" required value={newQuantity} onChange={e => setNewQuantity(e.target.value)} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
+                  <label className="text-xs font-bold uppercase text-muted-foreground">{receiving ? 'Số lượng nhập thêm *' : 'Số lượng mới *'}</label>
+                  <input type="number" min={receiving ? 1 : 0} step="1" max="2147483647" required value={newQuantity} onChange={e => setNewQuantity(e.target.value)} className="w-full px-4 py-2.5 bg-background border border-border rounded-lg outline-none focus:border-primary" />
+                  {receiving && <p className="text-xs text-muted-foreground">Hiện có: {editItem.quantity}. Số lượng nhập sẽ được cộng vào kho hiện tại.</p>}
                 </div>
+                <label className="block text-sm font-medium">Lý do điều chỉnh *
+                  <textarea required maxLength={300} value={reason} onChange={e => setReason(e.target.value)} className="mt-2 w-full rounded-lg border border-border bg-background p-3" placeholder="Kiểm kê thực tế, hàng hỏng..." />
+                </label>
                 <div className="pt-2 flex justify-end gap-3">
                   <button type="button" onClick={() => setEditItem(null)} className="px-5 py-2.5 font-bold text-muted-foreground hover:bg-muted rounded-lg text-sm">Hủy</button>
                   <button type="submit" disabled={isSaving} className="bg-primary text-primary-foreground px-6 py-2.5 rounded-lg font-bold flex items-center gap-2 text-sm">
@@ -252,7 +277,7 @@ const InventoryManagement = () => {
                 </div>
               </form>
             </motion.div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
     </div>

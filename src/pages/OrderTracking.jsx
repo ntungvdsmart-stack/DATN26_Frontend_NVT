@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import OrderProgress from '../components/shared/OrderProgress';
+import ProductImage from '../components/shared/ProductImage';
+import ModalLayer from '../components/shared/ModalLayer';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Loader2, Package, Truck, CheckCircle2, RotateCcw, AlertCircle, XCircle } from 'lucide-react';
+import { Search, Loader2, Package, Truck, CheckCircle2, RotateCcw, AlertCircle, XCircle, MapPin, ReceiptText, ArrowLeft, MessageCircle } from 'lucide-react';
 import orderApi from '../api/orderApi';
 import returnApi from '../api/returnApi';
 import { cn } from '../lib/utils';
@@ -18,24 +21,6 @@ const OrderTracking = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Auto search and verify payment if code exists in URL
-  useEffect(() => {
-    if (codeParam) {
-      if (paymentParam === 'success') {
-        // Tự động báo cho Backend kiểm tra giao dịch (cho localhost không xài webhook)
-        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/stripe/verify-payment`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ orderCode: codeParam })
-        }).finally(() => {
-          handleTrack({ preventDefault: () => {} });
-        });
-      } else {
-        handleTrack({ preventDefault: () => {} });
-      }
-    }
-  }, [codeParam, paymentParam]);
-
   // Return Modal State
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [returnType, setReturnType] = useState('return');
@@ -43,9 +28,10 @@ const OrderTracking = () => {
   const [selectedItems, setSelectedItems] = useState({}); // { item_id: quantity }
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleTrack = async (e) => {
-    e.preventDefault();
-    if (!orderCode.trim()) {
+  const handleTrack = useCallback(async (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    const queryCode = (orderCode || codeParam || '').trim();
+    if (!queryCode) {
       setError('Vui lòng nhập mã đơn hàng');
       return;
     }
@@ -55,7 +41,7 @@ const OrderTracking = () => {
     setOrder(null);
 
     try {
-      const res = await orderApi.trackOrder(orderCode.trim());
+      const res = await orderApi.trackOrder(queryCode);
       if (res && res.success) {
         setOrder(res.data);
       } else {
@@ -66,12 +52,39 @@ const OrderTracking = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [orderCode, codeParam]);
+
+  useEffect(() => {
+    if (!order?.order_code || order.payment_status !== 'pending' || !['stripe', 'vnpay', 'momo'].includes(order.payment_method) || order.order_status === 'cancelled') return;
+    let active = true;
+    const timer = setInterval(() => {
+      orderApi.trackOrder(order.order_code).then(result => { if (active) setOrder(result.data); }).catch(() => {});
+    }, 5000);
+    return () => { active = false; clearInterval(timer); };
+  }, [order?.order_code, order?.payment_status, order?.payment_method, order?.order_status]);
+
+  // Auto search and verify payment if code exists in URL
+  useEffect(() => {
+    if (codeParam) {
+      if (paymentParam === 'success') {
+        // Tự động báo cho Backend kiểm tra giao dịch (cho localhost không xài webhook)
+        fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/stripe/verify-payment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderCode: codeParam })
+        }).finally(() => {
+          handleTrack();
+        });
+      } else {
+        handleTrack();
+      }
+    }
+  }, [codeParam, paymentParam, handleTrack]);
 
   const handleReturnSubmit = async (e) => {
     e.preventDefault();
     const itemsToReturn = Object.entries(selectedItems)
-      .filter(([id, qty]) => qty > 0)
+      .filter(([, qty]) => qty > 0)
       .map(([id, qty]) => ({ order_item_id: Number(id), quantity: qty }));
 
     if (itemsToReturn.length === 0) {
@@ -115,25 +128,19 @@ const OrderTracking = () => {
     'returned': { label: 'Hoàn trả', icon: RotateCcw, color: 'text-rose-500', bg: 'bg-rose-500/10' }
   };
 
-  const getStatusIndex = (status) => {
-    const order = ['pending', 'confirmed', 'processing', 'shipping', 'completed'];
-    return order.indexOf(status);
-  };
-
-  const currentStatusIndex = order ? getStatusIndex(order.order_status) : -1;
   const isCancelledOrReturned = order && (order.order_status === 'cancelled' || order.order_status === 'returned');
 
   return (
     <>
-      <div className="min-h-[80vh] bg-background pt-16 pb-20">
-        <div className="container mx-auto px-4 max-w-3xl">
+      <div className="customer-page">
+        <div className="customer-container">
           <div className="text-center mb-10">
-            <h1 className="text-3xl md:text-4xl font-black uppercase tracking-tight mb-4">Tra cứu đơn hàng</h1>
+            <h1 className="customer-title mb-3">Tra cứu đơn hàng</h1>
             <p className="text-muted-foreground">Nhập mã đơn hàng của bạn để kiểm tra trạng thái vận chuyển</p>
           </div>
 
           {/* Form Search */}
-          <div className="bg-card border border-border p-6 rounded-2xl shadow-sm mb-8">
+          <div className="customer-surface p-4 sm:p-6 mb-8">
             <form onSubmit={handleTrack} className="flex flex-col sm:flex-row gap-4">
               <div className="relative flex-1">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground w-5 h-5" />
@@ -169,11 +176,11 @@ const OrderTracking = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden"
+              className="order-detail customer-surface overflow-hidden"
             >
-              <div className="p-6 border-b border-border bg-muted/10 flex flex-col sm:flex-row justify-between gap-4">
+              <div className="p-5 sm:p-7 border-b border-border flex flex-col sm:flex-row justify-between gap-4">
                 <div>
-                  <h3 className="font-bold text-lg">Đơn hàng <span className="font-mono text-primary">{order.order_code}</span></h3>
+                  <h3 className="text-sm font-medium text-muted-foreground">Đơn hàng <span className="block mt-1 text-xl sm:text-2xl font-semibold tracking-tight text-foreground break-all">{order.order_code}</span></h3>
                   <p className="text-sm text-muted-foreground mt-1">Ngày đặt: {new Date(order.created_at).toLocaleString('vi-VN')}</p>
                 </div>
                 <div className="text-left sm:text-right">
@@ -184,46 +191,7 @@ const OrderTracking = () => {
                 </div>
               </div>
 
-              {/* Timeline (Chỉ hiện nếu không bị hủy/hoàn) */}
-              {!isCancelledOrReturned && (
-                <div className="p-8 border-b border-border">
-                  <div className="relative flex justify-between items-center max-w-2xl mx-auto">
-                    {/* Line behind icons */}
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-1 bg-border -z-10" />
-                    {/* Active line */}
-                    <motion.div 
-                      className="absolute left-0 top-1/2 -translate-y-1/2 h-1 bg-primary -z-10" 
-                      initial={{ width: 0 }}
-                      animate={{ width: currentStatusIndex >= 0 ? `${(currentStatusIndex / 4) * 100}%` : '0%' }}
-                      transition={{ duration: 0.8, ease: "easeOut" }}
-                    />
-
-                    {['pending', 'confirmed', 'processing', 'shipping', 'completed'].map((step, idx) => {
-                      const isActive = idx <= currentStatusIndex;
-                      const isCurrent = idx === currentStatusIndex;
-                      const StepIcon = statusMap[step].icon;
-                      return (
-                        <div key={step} className="flex flex-col items-center gap-2 bg-card relative z-10">
-                          <div className={cn(
-                            'w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors duration-500',
-                            isActive ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background text-muted-foreground',
-                            isCurrent && 'ring-4 ring-primary/20'
-                          )}>
-                            <StepIcon size={18} />
-                          </div>
-                          <span className={cn(
-                            'text-[10px] sm:text-xs font-bold uppercase tracking-wider absolute -bottom-6 w-24 text-center',
-                            isActive ? 'text-foreground' : 'text-muted-foreground'
-                          )}>
-                            {statusMap[step].label}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="h-6" /> {/* Spacer for text */}
-                </div>
-              )}
+              {!isCancelledOrReturned && <section className="p-5 sm:p-8 border-b border-border"><h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-6">Tiến độ đơn hàng</h3><OrderProgress status={order.order_status} /></section>}
 
               {isCancelledOrReturned && (
                 <div className="p-8 border-b border-border text-center bg-rose-500/5">
@@ -233,43 +201,49 @@ const OrderTracking = () => {
               )}
 
               {/* Order Info & Items */}
-              <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div>
-                  <h4 className="font-bold uppercase tracking-wider text-sm mb-4">Thông tin nhận hàng</h4>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                    {order.shipping_address_snapshot || 'Không có thông tin'}
+              <div className="p-4 sm:p-7 grid grid-cols-1 lg:grid-cols-[.85fr_1.15fr] gap-5 sm:gap-7">
+                <div className="rounded-2xl border border-border bg-muted/20 p-5 h-fit">
+                  <h4 className="font-semibold text-sm mb-4 flex items-center gap-2"><MapPin size={17} className="text-muted-foreground" />Thông tin nhận hàng</h4>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words leading-7">
+                    {order.shipping_address_snapshot ? order.shipping_address_snapshot.replace(/,\s*(?=SĐT:|ĐT:|ĐC:)/g, '\n') : 'Không có thông tin'}
                   </p>
+                  {order.payment_method && <div className="mt-5 pt-4 border-t border-border/70"><p className="text-xs text-muted-foreground mb-1">Phương thức thanh toán</p><p className="text-sm font-medium">{{ cash: 'Tiền mặt / COD', stripe: 'Thẻ qua Stripe', bank_transfer: 'Chuyển khoản', vnpay: 'VNPAY', momo: 'MoMo' }[order.payment_method] || order.payment_method}</p></div>}
                 </div>
                 <div>
-                  <h4 className="font-bold uppercase tracking-wider text-sm mb-4">Sản phẩm ({order.items?.length || 0})</h4>
-                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2">
+                  <h4 className="font-semibold text-sm mb-5 flex items-center gap-2"><Package size={17} className="text-muted-foreground" />Sản phẩm ({order.items?.length || 0})</h4>
+                  <div className="space-y-4 max-h-[420px] overflow-y-auto overscroll-contain pr-1">
                     {order.items?.map(item => (
-                      <div key={item.item_id} className="flex gap-3">
-                        <div className="w-16 h-20 bg-muted shrink-0 rounded overflow-hidden">
+                      <div key={item.item_id} className="flex gap-4 rounded-xl border border-border/70 p-3 sm:p-4">
+                        <div className="w-16 h-20 sm:w-20 sm:h-24 bg-muted shrink-0 rounded-lg overflow-hidden">
                           {item.image_url ? (
-                            <img src={item.image_url} alt="" className="w-full h-full object-cover" />
+                            <ProductImage src={item.image_url} alt="" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center"><Package size={20} className="text-muted-foreground"/></div>
                           )}
                         </div>
-                        <div className="flex-1 text-sm">
-                          <p className="font-bold line-clamp-2">{item.product_name || `Sản phẩm #${item.variant_id}`}</p>
+                        <div className="flex-1 min-w-0 text-sm">
+                          <p className="font-semibold line-clamp-2 leading-relaxed">{item.product_name || `Sản phẩm #${item.variant_id}`}</p>
                           {(item.color_name || item.size_value) && (
                             <p className="text-xs text-muted-foreground mt-1">
                               {item.color_name} {item.color_name && item.size_value && '|'} {item.size_value}
                             </p>
                           )}
-                          <div className="flex justify-between items-center mt-2">
+                          <div className="flex flex-wrap justify-between items-center gap-2 mt-3">
                             <span className="text-xs font-medium">SL: {item.quantity}</span>
-                            <span className="font-bold">{Number(item.unit_price).toLocaleString('vi-VN')}đ</span>
+                            <span className="font-bold">{Number(Number(item.unit_price) * Number(item.quantity)).toLocaleString('vi-VN')}đ</span>
                           </div>
                         </div>
                       </div>
                     ))}
                   </div>
-                  <div className="mt-6 pt-4 border-t border-border flex justify-between items-end">
-                    <span className="font-bold uppercase tracking-wider text-sm">Tổng thanh toán</span>
-                    <span className="text-xl font-black text-primary">{Number(order.total_amount).toLocaleString('vi-VN')}đ</span>
+                  <dl className="mt-5 space-y-2 text-sm">
+                    {order.subtotal_amount != null && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Tạm tính</dt><dd>{Number(order.subtotal_amount).toLocaleString('vi-VN')}đ</dd></div>}
+                    {order.shipping_fee != null && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Phí giao hàng</dt><dd>{Number(order.shipping_fee) === 0 ? 'Miễn phí' : `${Number(order.shipping_fee).toLocaleString('vi-VN')}đ`}</dd></div>}
+                    {Number(order.discount_amount) + Number(order.loyalty_discount || 0) > 0 && <div className="flex justify-between gap-3"><dt className="text-muted-foreground">Giảm giá</dt><dd className="text-emerald-600">−{(Number(order.discount_amount || 0) + Number(order.loyalty_discount || 0)).toLocaleString('vi-VN')}đ</dd></div>}
+                  </dl>
+                  <div className="mt-4 rounded-xl bg-muted/40 p-4 sm:p-5 flex flex-wrap gap-3 justify-between items-center">
+                    <span className="font-medium text-sm flex items-center gap-2"><ReceiptText size={17} />Tổng thanh toán</span>
+                    <span className="text-2xl font-semibold tracking-tight text-foreground">{Number(order.total_amount).toLocaleString('vi-VN')}đ</span>
                   </div>
 
                   {order.order_status === 'pending' && (
@@ -300,10 +274,8 @@ const OrderTracking = () => {
                 </div>
               </div>
               
-              <div className="p-4 bg-muted/30 text-center border-t border-border flex flex-col sm:flex-row justify-center items-center gap-4">
-                <p className="text-xs text-muted-foreground">
-                  Nếu bạn cần hỗ trợ thêm về đơn hàng này, vui lòng <Link to="/store" className="text-primary underline">Liên hệ CSKH</Link>.
-                </p>
+              <div className="p-5 bg-muted/20 border-t border-border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="flex flex-wrap items-center gap-4"><Link to="/store/orders" className="text-xs font-medium inline-flex items-center gap-1.5 hover:underline"><ArrowLeft size={14} />Đơn hàng của tôi</Link><Link to="/store/faq" className="text-xs text-muted-foreground inline-flex items-center gap-1.5 hover:text-foreground"><MessageCircle size={14} />Cần hỗ trợ? Xem hỏi đáp</Link></div>
                 {order.order_status === 'completed' && (
                   <button 
                     onClick={() => {
@@ -325,7 +297,7 @@ const OrderTracking = () => {
       {/* Return Modal */}
       <AnimatePresence>
         {isReturnModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <ModalLayer onClose={() => setIsReturnModalOpen(false)} label="Yêu cầu đổi trả"><div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsReturnModalOpen(false)} />
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="relative w-full max-w-2xl bg-background border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="p-6 border-b border-border/50 flex justify-between items-center bg-muted/30">
@@ -342,11 +314,11 @@ const OrderTracking = () => {
                     {order.items?.map(item => (
                       <div key={item.item_id} className="flex items-center gap-4 p-3 border border-border rounded-xl">
                         <div className="w-12 h-16 bg-muted shrink-0 rounded overflow-hidden">
-                          {item.image_url ? <img src={item.image_url} alt="" className="w-full h-full object-cover" /> : <Package size={20} className="m-auto h-full text-muted-foreground"/>}
+                          <ProductImage src={item.image_url} alt={item.product_name || ''} className="w-full h-full object-cover" />
                         </div>
-                        <div className="flex-1 text-sm">
+                        <div className="flex-1 min-w-0 text-sm">
                           <p className="font-bold">{item.product_name}</p>
-                          <p className="text-xs text-muted-foreground">Mua: {item.quantity} | Giá: {Number(item.unit_price).toLocaleString('vi-VN')}đ</p>
+                          <p className="text-xs text-muted-foreground">Mua: {item.quantity} | Giá: {Number(Number(item.unit_price) * Number(item.quantity)).toLocaleString('vi-VN')}đ</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <label className="text-xs font-bold text-muted-foreground">SL Trả:</label>
@@ -401,7 +373,7 @@ const OrderTracking = () => {
                 </button>
               </div>
             </motion.div>
-          </div>
+          </div></ModalLayer>
         )}
       </AnimatePresence>
       </div>

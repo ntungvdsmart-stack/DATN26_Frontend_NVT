@@ -7,6 +7,7 @@ const orderApi = {
   updateStatus: (id, status, note = '') => axiosClient.patch(`/orders/admin/${id}/status`, { status, note }),
   getBranchSuggestions: (id) => axiosClient.get(`/orders/admin/${id}/branch-suggestions`),
   assignOrder: (id, data) => axiosClient.post(`/orders/admin/${id}/assign`, data),
+  completePickup: id => axiosClient.post(`/orders/admin/${id}/pickup`, {}),
   deleteOrder: (id) => axiosClient.delete(`/orders/admin/${id}`),
 
   // === Public / Customer: tạo đơn hàng online ===

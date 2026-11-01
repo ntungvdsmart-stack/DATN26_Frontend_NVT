@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -88,6 +89,7 @@ const textLine = {
 };
 
 const HeroSlider = () => {
+  const navigate = useNavigate();
   const [current, setCurrent] = useState(0);
   const [dir, setDir] = useState(1);
   const [paused, setPaused] = useState(false);
@@ -149,6 +151,8 @@ const HeroSlider = () => {
 
   return (
     <section
+      onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)} onBlurCapture={() => setPaused(false)}
       className="relative w-full overflow-hidden bg-black"
       style={{ height: 'clamp(350px, 65vh, 600px)' }}
     >
@@ -201,7 +205,10 @@ const HeroSlider = () => {
             ))}
 
             <motion.div variants={textLine} className="mt-7">
-              <button className="bg-white text-black px-7 py-3.5 text-xs font-bold tracking-[0.18em] uppercase hover:bg-white/90 active:scale-95 transition-all">
+              <button 
+                onClick={() => navigate('/store/products')}
+                className="bg-white text-black px-7 py-3.5 text-xs font-bold tracking-[0.18em] uppercase hover:bg-white/90 active:scale-95 transition-all"
+              >
                 {slide.cta}
               </button>
             </motion.div>

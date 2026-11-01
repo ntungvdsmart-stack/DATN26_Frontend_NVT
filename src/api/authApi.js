@@ -1,6 +1,7 @@
 import axiosClient from './axiosClient';
 
 const authApi = {
+  me: () => axiosClient.get('/auth/me'),
   // Đăng ký tài khoản khách hàng
   register: (data) => {
     return axiosClient.post('/auth/register', data);

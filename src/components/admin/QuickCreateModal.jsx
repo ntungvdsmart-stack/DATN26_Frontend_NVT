@@ -1,3 +1,4 @@
+import ModalLayer from '../shared/ModalLayer';
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Save } from 'lucide-react';
@@ -7,6 +8,8 @@ import productApi from '../../api/productApi';
 const QuickCreateModal = ({ type, onClose, onSuccess }) => {
   const [formData, setFormData] = useState({ name: '', hex: '#000000' });
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
+  const maxName = { category: 100, brand: 100, color: 50, size: 20, material: 100 }[type] || 100;
 
   const getTitle = () => {
     switch (type) {
@@ -21,7 +24,10 @@ const QuickCreateModal = ({ type, onClose, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formData.name.trim()) return toast.error('Vui lòng nhập tên');
+    if (isSaving) return;
+    if (!formData.name.trim() || formData.name.length > maxName) return setError(`Tên bắt buộc, tối đa ${maxName} ký tự`);
+    if (type === 'color' && !/^#[a-fA-F0-9]{6}$/.test(formData.hex)) return setError('Mã màu phải có dạng #RRGGBB');
+    setError('');
     setIsSaving(true);
 
     try {
@@ -51,14 +57,14 @@ const QuickCreateModal = ({ type, onClose, onSuccess }) => {
         toast.error(res?.message || 'Có lỗi xảy ra');
       }
     } catch (error) {
-      toast.error(error.response?.data?.message || error.message || 'Lỗi kết nối');
+      setError(error.response?.data?.message || error.message || 'Lỗi kết nối');
     } finally {
       setIsSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
+    <ModalLayer onClose={onClose} label="Thêm thuộc tính"><div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -73,6 +79,7 @@ const QuickCreateModal = ({ type, onClose, onSuccess }) => {
         </div>
         
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="space-y-1.5">
             <label className="text-xs font-bold uppercase text-muted-foreground">
               Tên {type === 'size' ? '(S, M, 38, ...)' : type === 'color' ? 'Màu (Đen, Đỏ, ...)' : ''} *
@@ -81,6 +88,8 @@ const QuickCreateModal = ({ type, onClose, onSuccess }) => {
               type="text" 
               autoFocus
               required 
+              maxLength={maxName}
+              aria-label="Tên thuộc tính"
               value={formData.name} 
               onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
               placeholder="Nhập tên..." 
@@ -94,12 +103,13 @@ const QuickCreateModal = ({ type, onClose, onSuccess }) => {
               <div className="flex gap-2">
                 <input 
                   type="color" 
-                  value={formData.hex} 
+                  value={/^#[a-fA-F0-9]{6}$/.test(formData.hex) ? formData.hex : '#000000'}
                   onChange={e => setFormData(prev => ({ ...prev, hex: e.target.value }))}
                   className="w-10 h-10 p-1 border border-border rounded-lg cursor-pointer bg-background"
                 />
                 <input 
                   type="text" 
+                  maxLength={7} pattern="#[a-fA-F0-9]{6}"
                   value={formData.hex} 
                   onChange={e => setFormData(prev => ({ ...prev, hex: e.target.value }))}
                   className="flex-1 px-3 py-2 bg-background border border-border rounded-lg focus:border-primary outline-none font-mono"
@@ -130,7 +140,7 @@ const QuickCreateModal = ({ type, onClose, onSuccess }) => {
           </div>
         </form>
       </motion.div>
-    </div>
+    </div></ModalLayer>
   );
 };
 
